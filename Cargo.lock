@@ -965,7 +965,7 @@ dependencies = [
 
 [[package]]
 name = "pybergshamra"
-version = "0.3.2"
+version = "0.3.3"
 dependencies = [
  "bergshamra-c14n",
  "bergshamra-core",
