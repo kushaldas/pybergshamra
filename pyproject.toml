@@ -23,10 +23,6 @@ dev = [
     "furo",
 ]
 
-
-[project.urls]
-Documentation = "https://pybergshamra.readthedocs.org/"
-Repository = "https://github.com/kushaldas/pybergshamra"
-
 [tool.maturin]
 features = ["pyo3/extension-module"]
+exclude = ["tests/**", "test-data/**"]

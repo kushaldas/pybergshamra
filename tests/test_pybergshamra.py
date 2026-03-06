@@ -30,7 +30,7 @@ from pybergshamra import (
 # Fixtures and helpers
 # ---------------------------------------------------------------------------
 
-TEST_DATA = Path(__file__).resolve().parent.parent.parent / "bergshamra" / "test-data"
+TEST_DATA = Path(__file__).resolve().parent.parent / "test-data"
 KEYS_DIR = TEST_DATA / "keys"
 RSA_DIR = KEYS_DIR / "rsa"
 EC_DIR = KEYS_DIR / "ec"
