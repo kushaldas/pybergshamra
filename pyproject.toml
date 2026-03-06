@@ -1,0 +1,32 @@
+[build-system]
+requires = ["maturin>=1.0,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "pybergshamra"
+version = "0.3.1"
+description = "Python bindings for Bergshamra XML Security (XML-DSig, XML-Enc, C14N)"
+requires-python = ">=3.10"
+license = "BSD-2-Clause"
+classifiers = [
+    "Programming Language :: Rust",
+    "Programming Language :: Python :: Implementation :: CPython",
+    "Programming Language :: Python :: 3",
+    "Topic :: Security :: Cryptography",
+    "Topic :: Text Processing :: Markup :: XML",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "sphinx>=8.0",
+    "furo",
+]
+
+
+[project.urls]
+Documentation = "https://pybergshamra.readthedocs.org/"
+Repository = "https://github.com/kushaldas/pybergshamra"
+
+[tool.maturin]
+features = ["pyo3/extension-module"]

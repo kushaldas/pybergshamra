@@ -1,0 +1,21 @@
+# Configuration file for the Sphinx documentation builder.
+
+project = "pybergshamra"
+copyright = "2026, Kushal Das"
+author = "Kushal Das"
+release = "0.3.1"
+
+extensions = [
+    "sphinx.ext.autodoc",
+    "sphinx.ext.intersphinx",
+]
+
+intersphinx_mapping = {
+    "python": ("https://docs.python.org/3", None),
+}
+
+templates_path = ["_templates"]
+exclude_patterns = ["_build"]
+
+html_theme = "furo"
+html_static_path = ["_static"]

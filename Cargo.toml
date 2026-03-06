@@ -1,0 +1,20 @@
+[package]
+name = "pybergshamra"
+version = "0.3.1"
+edition = "2021"
+description = "Python bindings for the Bergshamra XML Security library"
+license = "BSD-2-Clause"
+
+[lib]
+name = "pybergshamra"
+crate-type = ["cdylib"]
+
+[dependencies]
+pyo3 = { version = "0.28.2", features = ["extension-module", "abi3-py310"] }
+bergshamra-core = "0.3.1"
+bergshamra-c14n = "0.3.1"
+bergshamra-keys = "0.3.1"
+bergshamra-dsig = "0.3.1"
+bergshamra-enc = "0.3.1"
+bergshamra-xml = "0.3.1"
+bergshamra-crypto = "0.3.1"
