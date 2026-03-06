@@ -1,6 +1,6 @@
 [package]
 name = "pybergshamra"
-version = "0.3.1"
+version = "0.3.2"
 edition = "2021"
 description = "Python bindings for the Bergshamra XML Security library"
 license = "BSD-2-Clause"
