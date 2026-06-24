@@ -49,3 +49,13 @@ pub fn to_pyerr(e: Error) -> PyErr {
         | Error::Other(_) => BergshamraError::new_err(e.to_string()),
     }
 }
+
+/// Convert a `kryptering::Error` (HSM / PKCS#11 backend) into a Python exception.
+pub fn kryptering_to_pyerr(e: kryptering::Error) -> PyErr {
+    use kryptering::Error as K;
+    match &e {
+        K::UnsupportedAlgorithm(_) => AlgorithmError::new_err(e.to_string()),
+        K::Key(_) => KeyLoadError::new_err(e.to_string()),
+        _ => CryptoError::new_err(e.to_string()),
+    }
+}

@@ -234,6 +234,20 @@ class TestKeyLoading:
         assert key.algorithm_name == "RSA"
         assert key.has_private_key is True
 
+    def test_parse_pkcs12_contents(self):
+        data = (RSA_DIR / "rsa-2048-key.p12").read_bytes()
+        contents = pybergshamra.parse_pkcs12(data, "secret123")
+        assert len(contents.private_keys) >= 1
+        assert len(contents.certificates) >= 1
+        assert all(isinstance(k, bytes) and k for k in contents.private_keys)
+        assert all(isinstance(c, bytes) and c for c in contents.certificates)
+        assert "Pkcs12Contents" in repr(contents)
+
+    def test_parse_pkcs12_wrong_password(self):
+        data = (RSA_DIR / "rsa-2048-key.p12").read_bytes()
+        with pytest.raises(Exception):
+            pybergshamra.parse_pkcs12(data, "wrong-password")
+
     def test_load_pem_auto_rsa(self):
         pem = (RSA_DIR / "rsa-2048-key.pem").read_bytes()
         key = pybergshamra.load_pem_auto(pem)
@@ -701,8 +715,22 @@ class TestVerification:
             assert isinstance(ref, VerifiedReference)
             assert isinstance(ref.uri, str)
             # resolved_node_id may be None for external refs
+            assert isinstance(ref.digest_verified, bool)
             r = repr(ref)
             assert "VerifiedReference" in r
+
+    def test_verify_result_digest_verified(self):
+        """A validly verified same-document reference reports digest_verified=True."""
+        xml = (SIGNED_DIR / "valid-saml.xml").read_text()
+        mgr = KeysManager()
+        ctx = DsigContext(mgr)
+        ctx.insecure = True
+        ctx.skip_time_checks = True
+        result = pybergshamra.verify(ctx, xml)
+        assert result.is_valid
+        assert result.references
+        # All references in a valid document were cryptographically checked.
+        assert all(ref.digest_verified for ref in result.references)
 
     def test_verify_result_key_info(self):
         """Check VerifiedKeyInfo properties."""
@@ -929,6 +957,23 @@ class TestDsigContext:
         ctx = DsigContext(mgr)
         ctx.add_url_map("http://example.com/data", "/tmp/data.xml")
 
+    def test_secure_profile_defaults(self):
+        """DsigContext.secure() sets the secure-by-default profile."""
+        mgr = KeysManager()
+        ctx = DsigContext.secure(mgr)
+        assert ctx.trusted_keys_only is True
+        assert ctx.strict_verification is True
+        assert ctx.hmac_min_out_len == 160
+
+    def test_permissive_profile_matches_default(self):
+        """DsigContext.permissive() equals the default DsigContext(manager)."""
+        mgr = KeysManager()
+        permissive = DsigContext.permissive(mgr)
+        default = DsigContext(mgr)
+        assert permissive.trusted_keys_only is default.trusted_keys_only is False
+        assert permissive.strict_verification is default.strict_verification is False
+        assert permissive.hmac_min_out_len == default.hmac_min_out_len == 0
+
 
 # ===========================================================================
 # 11. XML Encryption
@@ -1051,7 +1096,7 @@ class TestKDFs:
     def test_pbkdf2_derive(self):
         """PBKDF2 with HMAC-SHA256, 32-byte output."""
         password = b"password"
-        salt = b"salt"
+        salt = b"saltsalt"  # >= 8 bytes (RFC 8018 minimum)
         result = pybergshamra.pbkdf2_derive(
             password=password,
             salt=salt,
@@ -1064,8 +1109,8 @@ class TestKDFs:
 
     def test_pbkdf2_deterministic(self):
         """Same inputs produce same output."""
-        r1 = pybergshamra.pbkdf2_derive(b"pw", b"salt", 1000, 16, Algorithm.HMAC_SHA256)
-        r2 = pybergshamra.pbkdf2_derive(b"pw", b"salt", 1000, 16, Algorithm.HMAC_SHA256)
+        r1 = pybergshamra.pbkdf2_derive(b"pw", b"saltsalt", 1000, 16, Algorithm.HMAC_SHA256)
+        r2 = pybergshamra.pbkdf2_derive(b"pw", b"saltsalt", 1000, 16, Algorithm.HMAC_SHA256)
         assert r1 == r2
 
     def test_hkdf_derive(self):

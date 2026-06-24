@@ -353,6 +353,14 @@ class VerifiedReference:
     def resolved_node_id(self) -> Optional[int]:
         """The resolved target node ID (if a same-document reference)."""
         ...
+    @property
+    def digest_verified(self) -> bool:
+        """Whether this reference's digest was cryptographically verified.
+
+        ``False`` for references the engine could not check itself (e.g. ``cid:``
+        MIME attachments in WS-Security); verify those out of band.
+        """
+        ...
     def __repr__(self) -> str: ...
 
 class VerifiedKeyInfo:
@@ -409,6 +417,24 @@ class DsigContext:
     """
 
     def __init__(self, keys_manager: KeysManager) -> None: ...
+    @staticmethod
+    def secure(keys_manager: KeysManager) -> DsigContext:
+        """Secure-by-default context (mirrors Rust ``DsigContext::new()``):
+        ``trusted_keys_only=True``, ``strict_verification=True``,
+        ``hmac_min_out_len=160``. Recommended for federated identity / SAML."""
+        ...
+    @staticmethod
+    def permissive(keys_manager: KeysManager) -> DsigContext:
+        """Permissive context (mirrors Rust ``DsigContext::new_permissive()``):
+        standard W3C behaviour with inline ``KeyInfo`` extraction. Same as the
+        default ``DsigContext(manager)`` constructor."""
+        ...
+    def set_hsm_signer(self, signer: Pkcs11Signer) -> None:
+        """Use an HSM-backed (PKCS#11) signer for signing."""
+        ...
+    def set_hsm_verifier(self, verifier: Pkcs11Verifier) -> None:
+        """Use an HSM-backed (PKCS#11) verifier for verification."""
+        ...
     @property
     def debug(self) -> bool:
         """Debug mode: print pre-digest and pre-signature data to stderr."""
@@ -494,6 +520,30 @@ class EncContext:
     def disable_cipher_reference(self, value: bool) -> None: ...
     def add_id_attr(self, name: str) -> None:
         """Register an additional ID attribute name."""
+        ...
+    def set_hsm_decryptor(
+        self, decryptor: Pkcs11Decryptor, allowed_algorithms: list[str]
+    ) -> None:
+        """Decrypt the wrapped session key via an HSM (PKCS#11) private key.
+
+        ``allowed_algorithms`` is the allow-list of XML-Enc key-transport URIs
+        the HSM decryptor may handle (e.g. ``Algorithm.RSA_OAEP``).
+        """
+        ...
+    def set_hsm_key_unwrapper(
+        self, unwrapper: Pkcs11KeyWrapper, allowed_algorithms: list[str]
+    ) -> None:
+        """Unwrap the session key via an HSM (PKCS#11) AES key-wrap key."""
+        ...
+    def set_hsm_encryptor(
+        self, encryptor: Pkcs11Encryptor, allowed_algorithms: list[str]
+    ) -> None:
+        """Encrypt the session key via an HSM (PKCS#11) public key."""
+        ...
+    def set_hsm_key_wrapper(
+        self, wrapper: Pkcs11KeyWrapper, allowed_algorithms: list[str]
+    ) -> None:
+        """Wrap the session key via an HSM (PKCS#11) AES key-wrap key."""
         ...
 
 # Module-level functions — DSig
@@ -779,3 +829,120 @@ def build_x509_key_info(certs_b64: list[str]) -> str:
 def build_x509_key_info_from_der(certs_der: list[bytes]) -> str:
     """Build a <KeyInfo><X509Data> XML fragment from DER-encoded certificates."""
     ...
+
+# PKCS#12 container parsing
+
+class Pkcs12Contents:
+    """The decoded contents of a PKCS#12 (.p12/.pfx) container."""
+
+    @property
+    def private_keys(self) -> list[bytes]:
+        """PKCS#8 DER-encoded private keys found in the container."""
+        ...
+    @property
+    def certificates(self) -> list[bytes]:
+        """DER-encoded X.509 certificates found in the container."""
+        ...
+    def __repr__(self) -> str: ...
+
+def parse_pkcs12(data: bytes, password: str) -> Pkcs12Contents:
+    """Parse a PKCS#12 container into its raw private keys and certificates.
+
+    Unlike :func:`load_pkcs12` (which returns a single ready-to-use :class:`Key`),
+    this exposes every private key and certificate in the container.
+    """
+    ...
+
+# HSM / PKCS#11 support
+#
+# Drive XML-DSig signing/verification and XML-Enc encryption/decryption with key
+# material that never leaves a hardware token (or SoftHSM2). Algorithms are
+# given as W3C URIs (use the ``Algorithm`` constants); ECDSA additionally needs
+# ``ec_curve`` because the URI does not encode the curve.
+
+class Pkcs11Provider:
+    """A loaded PKCS#11 module bound to the first slot with a token present."""
+
+    def __init__(self, library_path: str) -> None: ...
+    def open_session(self, pin: str) -> Pkcs11Session:
+        """Open an authenticated read/write session using a UTF-8 user PIN."""
+        ...
+    def open_session_bytes(self, pin: bytes) -> Pkcs11Session:
+        """Open an authenticated read/write session using a raw-byte PIN."""
+        ...
+    def __repr__(self) -> str: ...
+
+class Pkcs11Session:
+    """An authenticated PKCS#11 session. Pass it to the operation constructors."""
+
+    def __repr__(self) -> str: ...
+
+class Pkcs11Signer:
+    """Produces signatures using a private (or HMAC secret) key on the token."""
+
+    def __init__(
+        self,
+        session: Pkcs11Session,
+        key_label: str,
+        algorithm: str,
+        ec_curve: Optional[str] = None,
+    ) -> None: ...
+    def sign(self, data: bytes) -> bytes:
+        """Sign ``data`` directly (mostly for testing); returns the raw signature."""
+        ...
+    def __repr__(self) -> str: ...
+
+class Pkcs11Verifier:
+    """Verifies signatures using a public (or HMAC secret) key on the token."""
+
+    def __init__(
+        self,
+        session: Pkcs11Session,
+        key_label: str,
+        algorithm: str,
+        ec_curve: Optional[str] = None,
+    ) -> None: ...
+    def verify(self, data: bytes, signature: bytes) -> bool:
+        """Verify ``signature`` over ``data`` directly (mostly for testing)."""
+        ...
+    def __repr__(self) -> str: ...
+
+class Pkcs11Decryptor:
+    """Decrypts a wrapped key (RSA-OAEP / RSA-PKCS1) using a private key on the token."""
+
+    def __init__(
+        self,
+        session: Pkcs11Session,
+        key_label: str,
+        algorithm: str,
+        digest: Optional[str] = None,
+        mgf: Optional[str] = None,
+        oaep_label: Optional[bytes] = None,
+    ) -> None: ...
+    def decrypt(self, ciphertext: bytes) -> bytes: ...
+    def __repr__(self) -> str: ...
+
+class Pkcs11Encryptor:
+    """Encrypts a key (RSA-OAEP / RSA-PKCS1) using a public key on the token."""
+
+    def __init__(
+        self,
+        session: Pkcs11Session,
+        key_label: str,
+        algorithm: str,
+        digest: Optional[str] = None,
+        mgf: Optional[str] = None,
+        oaep_label: Optional[bytes] = None,
+    ) -> None: ...
+    def encrypt(self, plaintext: bytes) -> bytes: ...
+    def __repr__(self) -> str: ...
+
+class Pkcs11KeyWrapper:
+    """Wraps/unwraps symmetric keys with an AES KEK on the token (RFC 3394)."""
+
+    def __init__(
+        self, session: Pkcs11Session, key_label: str, algorithm: str
+    ) -> None: ...
+    def wrap(self, key_data: bytes) -> bytes: ...
+    def unwrap(self, wrapped: bytes) -> bytes: ...
+    def __repr__(self) -> str: ...
