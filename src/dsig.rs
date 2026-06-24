@@ -20,6 +20,7 @@ use crate::keys::KeysManager;
 pub struct VerifiedReference {
     uri: String,
     resolved_node_id: Option<usize>,
+    digest_verified: bool,
 }
 
 #[pymethods]
@@ -36,10 +37,26 @@ impl VerifiedReference {
         self.resolved_node_id
     }
 
+    /// Whether this reference's digest was cryptographically verified.
+    ///
+    /// `False` for references that the engine could not check itself (e.g.
+    /// `cid:` MIME attachments in WS-Security); the caller must verify those
+    /// out of band before trusting the signature.
+    #[getter]
+    fn digest_verified(&self) -> bool {
+        self.digest_verified
+    }
+
     fn __repr__(&self) -> String {
         match self.resolved_node_id {
-            Some(nid) => format!("VerifiedReference(uri='{}', node_id={})", self.uri, nid),
-            None => format!("VerifiedReference(uri='{}')", self.uri),
+            Some(nid) => format!(
+                "VerifiedReference(uri='{}', node_id={}, digest_verified={})",
+                self.uri, nid, self.digest_verified
+            ),
+            None => format!(
+                "VerifiedReference(uri='{}', digest_verified={})",
+                self.uri, self.digest_verified
+            ),
         }
     }
 }
@@ -49,6 +66,7 @@ impl From<&RustVerifiedReference> for VerifiedReference {
         VerifiedReference {
             uri: r.uri.clone(),
             resolved_node_id: r.resolved_node.map(|nid| nid.index()),
+            digest_verified: r.digest_verified,
         }
     }
 }
@@ -224,6 +242,13 @@ pub struct DsigContext {
     enabled_key_data_x509: bool,
     trusted_keys_only: bool,
     strict_verification: bool,
+    /// Which Rust constructor `to_rust()` starts from. When `true` the context
+    /// is built from the secure-by-default `RustDsigContext::new()`, so any
+    /// security defaults upstream sets beyond the fields modelled here are
+    /// inherited; otherwise it starts from `new_permissive()`.
+    base_secure: bool,
+    hsm_signer: Option<std::sync::Arc<dyn kryptering::traits::Signer>>,
+    hsm_verifier: Option<std::sync::Arc<dyn kryptering::traits::Verifier>>,
 }
 
 impl DsigContext {
@@ -234,7 +259,14 @@ impl DsigContext {
             .inner
             .lock()
             .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
-        let mut ctx = RustDsigContext::new(mgr_guard.clone());
+        // Start from the same base constructor the Python profile selected, so
+        // any upstream defaults not modelled as explicit fields below are
+        // preserved rather than silently reset to the permissive baseline.
+        let mut ctx = if self.base_secure {
+            RustDsigContext::new(mgr_guard.clone())
+        } else {
+            RustDsigContext::new_permissive(mgr_guard.clone())
+        };
         for attr in &self.id_attrs {
             ctx.add_id_attr(attr);
         }
@@ -251,6 +283,12 @@ impl DsigContext {
         ctx.enabled_key_data_x509 = self.enabled_key_data_x509;
         ctx.trusted_keys_only = self.trusted_keys_only;
         ctx.strict_verification = self.strict_verification;
+        if let Some(signer) = &self.hsm_signer {
+            ctx.hsm_signer = Some(Box::new(crate::hsm::SharedSigner(signer.clone())));
+        }
+        if let Some(verifier) = &self.hsm_verifier {
+            ctx.hsm_verifier = Some(Box::new(crate::hsm::SharedVerifier(verifier.clone())));
+        }
         Ok(ctx)
     }
 }
@@ -273,7 +311,43 @@ impl DsigContext {
             enabled_key_data_x509: false,
             trusted_keys_only: false,
             strict_verification: false,
+            base_secure: false,
+            hsm_signer: None,
+            hsm_verifier: None,
         }
+    }
+
+    /// Build a secure-by-default context, equivalent to Rust
+    /// ``DsigContext::new()``: ``trusted_keys_only=True``,
+    /// ``strict_verification=True``, ``hmac_min_out_len=160``, and any other
+    /// secure defaults upstream sets (``to_rust()`` starts from
+    /// ``RustDsigContext::new()``). Recommended for federated-identity / SAML.
+    #[staticmethod]
+    fn secure(keys_manager: &KeysManager) -> Self {
+        let mut ctx = DsigContext::new(keys_manager);
+        ctx.base_secure = true;
+        ctx.trusted_keys_only = true;
+        ctx.strict_verification = true;
+        ctx.hmac_min_out_len = 160;
+        ctx
+    }
+
+    /// Build a permissive context (mirrors Rust ``DsigContext::new_permissive()``):
+    /// standard W3C behaviour with inline ``KeyInfo`` extraction enabled. This is
+    /// the same configuration as the default ``DsigContext(manager)`` constructor.
+    #[staticmethod]
+    fn permissive(keys_manager: &KeysManager) -> Self {
+        DsigContext::new(keys_manager)
+    }
+
+    /// Use an HSM-backed signer (PKCS#11) for the signing operation.
+    fn set_hsm_signer(&mut self, signer: &crate::hsm::Pkcs11Signer) {
+        self.hsm_signer = Some(signer.arc());
+    }
+
+    /// Use an HSM-backed verifier (PKCS#11) for the verification operation.
+    fn set_hsm_verifier(&mut self, verifier: &crate::hsm::Pkcs11Verifier) {
+        self.hsm_verifier = Some(verifier.arc());
     }
 
     /// Debug mode: print pre-digest and pre-signature data to stderr.

@@ -20,6 +20,22 @@ pub struct EncContext {
     keys_manager: KeysManager,
     id_attrs: Vec<String>,
     disable_cipher_ref: bool,
+    hsm_decryptor: Option<(
+        std::sync::Arc<dyn kryptering::traits::Decryptor>,
+        Vec<String>,
+    )>,
+    hsm_key_unwrapper: Option<(
+        std::sync::Arc<dyn kryptering::traits::KeyWrapper>,
+        Vec<String>,
+    )>,
+    hsm_encryptor: Option<(
+        std::sync::Arc<dyn kryptering::traits::Encryptor>,
+        Vec<String>,
+    )>,
+    hsm_key_wrapper: Option<(
+        std::sync::Arc<dyn kryptering::traits::KeyWrapper>,
+        Vec<String>,
+    )>,
 }
 
 impl EncContext {
@@ -35,6 +51,34 @@ impl EncContext {
             ctx.add_id_attr(attr);
         }
         ctx.disable_cipher_reference = self.disable_cipher_ref;
+        if let Some((decryptor, algs)) = &self.hsm_decryptor {
+            let allowed: Vec<&str> = algs.iter().map(String::as_str).collect();
+            ctx = ctx.with_hsm_decryptor(
+                Box::new(crate::hsm::SharedDecryptor(decryptor.clone())),
+                &allowed,
+            );
+        }
+        if let Some((unwrapper, algs)) = &self.hsm_key_unwrapper {
+            let allowed: Vec<&str> = algs.iter().map(String::as_str).collect();
+            ctx = ctx.with_hsm_key_unwrapper(
+                Box::new(crate::hsm::SharedKeyWrapper(unwrapper.clone())),
+                &allowed,
+            );
+        }
+        if let Some((encryptor, algs)) = &self.hsm_encryptor {
+            let allowed: Vec<&str> = algs.iter().map(String::as_str).collect();
+            ctx = ctx.with_hsm_encryptor(
+                Box::new(crate::hsm::SharedEncryptor(encryptor.clone())),
+                &allowed,
+            );
+        }
+        if let Some((wrapper, algs)) = &self.hsm_key_wrapper {
+            let allowed: Vec<&str> = algs.iter().map(String::as_str).collect();
+            ctx = ctx.with_hsm_key_wrapper(
+                Box::new(crate::hsm::SharedKeyWrapper(wrapper.clone())),
+                &allowed,
+            );
+        }
         Ok(ctx)
     }
 }
@@ -47,6 +91,10 @@ impl EncContext {
             keys_manager: keys_manager.clone(),
             id_attrs: Vec::new(),
             disable_cipher_ref: false,
+            hsm_decryptor: None,
+            hsm_key_unwrapper: None,
+            hsm_encryptor: None,
+            hsm_key_wrapper: None,
         }
     }
 
@@ -63,6 +111,45 @@ impl EncContext {
     /// Register an additional ID attribute name.
     fn add_id_attr(&mut self, name: &str) {
         self.id_attrs.push(name.to_owned());
+    }
+
+    /// Decrypt the wrapped session key via an HSM (PKCS#11) private key.
+    ///
+    /// ``allowed_algorithms`` is the allow-list of XML-Enc key-transport URIs
+    /// the HSM decryptor is permitted to handle (e.g. ``Algorithm.RSA_OAEP``).
+    fn set_hsm_decryptor(
+        &mut self,
+        decryptor: &crate::hsm::Pkcs11Decryptor,
+        allowed_algorithms: Vec<String>,
+    ) {
+        self.hsm_decryptor = Some((decryptor.arc(), allowed_algorithms));
+    }
+
+    /// Unwrap the session key via an HSM (PKCS#11) AES key-wrap key.
+    fn set_hsm_key_unwrapper(
+        &mut self,
+        unwrapper: &crate::hsm::Pkcs11KeyWrapper,
+        allowed_algorithms: Vec<String>,
+    ) {
+        self.hsm_key_unwrapper = Some((unwrapper.arc(), allowed_algorithms));
+    }
+
+    /// Encrypt the session key via an HSM (PKCS#11) public key.
+    fn set_hsm_encryptor(
+        &mut self,
+        encryptor: &crate::hsm::Pkcs11Encryptor,
+        allowed_algorithms: Vec<String>,
+    ) {
+        self.hsm_encryptor = Some((encryptor.arc(), allowed_algorithms));
+    }
+
+    /// Wrap the session key via an HSM (PKCS#11) AES key-wrap key.
+    fn set_hsm_key_wrapper(
+        &mut self,
+        wrapper: &crate::hsm::Pkcs11KeyWrapper,
+        allowed_algorithms: Vec<String>,
+    ) {
+        self.hsm_key_wrapper = Some((wrapper.arc(), allowed_algorithms));
     }
 }
 

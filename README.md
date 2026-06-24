@@ -16,8 +16,23 @@ Python with no C dependencies to compile and no transitive native libraries to a
 - **Certificate validation** -- X.509 chain building and verification with CRL support
 - **Cryptographic primitives** -- digest, PBKDF2, HKDF, ConcatKDF
 - **Post-quantum signatures** -- ML-DSA-44/65/87, SLH-DSA
+- **HSM / PKCS#11** -- sign, verify, encrypt and decrypt with keys that never leave a hardware token (or SoftHSM2)
 - **Anti-XSW protection** -- strict verification mode
 - **Zero Python dependencies** -- ships as a single native extension
+
+## Security note: weak-digest X.509 policy
+
+Starting with Bergshamra 0.5.x, X.509 certificate chains signed with weak digests
+(MD5, SHA-1, SHA-224) are **rejected by default**. pybergshamra is built with
+Bergshamra's `legacy-algorithms` feature enabled, so `validate_cert_chain()` and
+signature verification that builds an X.509 chain **accept** these legacy digests for
+backward compatibility with existing certificates. The policy is fixed at build time --
+there is no per-call runtime toggle. To get strict, secure-by-default rejection of weak
+digests, build the extension yourself with the `legacy-algorithms` feature removed from
+the `bergshamra-keys` dependency in `Cargo.toml`.
+
+PBKDF2 also now enforces the RFC 8018 minimum salt length of 8 bytes; shorter salts
+raise `CryptoError`.
 
 ## Installation
 
@@ -111,6 +126,46 @@ h = digest(Algorithm.SHA256, b"hello world")
 print(h.hex())
 ```
 
+### Sign with a key on an HSM (PKCS#11)
+
+Key material stays on the token; pybergshamra talks to it over PKCS#11 (tested
+against SoftHSM2). Algorithms are given as W3C URIs from `Algorithm`; ECDSA also
+needs an `ec_curve` because the URI does not encode the curve.
+
+```python
+import pybergshamra
+from pybergshamra import Algorithm
+
+provider = pybergshamra.Pkcs11Provider("/usr/lib/softhsm/libsofthsm2.so")
+session = provider.open_session("1234")  # user PIN
+
+# Sign an XML template with an RSA key on the token
+manager = pybergshamra.KeysManager()
+sign_ctx = pybergshamra.DsigContext(manager)
+sign_ctx.set_hsm_signer(
+    pybergshamra.Pkcs11Signer(session, "my-rsa-key", Algorithm.RSA_SHA256)
+)
+signed_xml = pybergshamra.sign(sign_ctx, template_xml)
+
+# Verify with the matching public key on the token
+verify_ctx = pybergshamra.DsigContext(manager)
+verify_ctx.set_hsm_verifier(
+    pybergshamra.Pkcs11Verifier(session, "my-rsa-key", Algorithm.RSA_SHA256)
+)
+assert bool(pybergshamra.verify(verify_ctx, signed_xml))
+```
+
+`EncContext` exposes the same idea for encryption via `set_hsm_decryptor()`,
+`set_hsm_key_unwrapper()`, `set_hsm_encryptor()`, and `set_hsm_key_wrapper()`,
+each taking an allow-list of permitted algorithm URIs. The HSM operation classes
+(`Pkcs11Signer`, `Pkcs11Verifier`, `Pkcs11Decryptor`, `Pkcs11Encryptor`,
+`Pkcs11KeyWrapper`) also expose direct `sign()`/`verify()`/`decrypt()`/
+`encrypt()`/`wrap()`/`unwrap()` methods for standalone use.
+
+> Run `bash hsm-test/setup.sh` to provision a local SoftHSM2 token, then
+> `SOFTHSM2_CONF=hsm-test/softhsm2.local.conf pytest tests/test_hsm.py` to
+> exercise the PKCS#11 path. The CI `hsm` job does the same on every PR.
+
 ## API overview
 
 | Class / function | Purpose |
@@ -130,6 +185,17 @@ print(h.hex())
 | `canonicalize(xml, mode)` | Canonicalize an XML document |
 | `digest(uri, data)` | Compute a message digest |
 | `validate_cert_chain(...)` | Validate an X.509 certificate chain |
+| `parse_pkcs12(data, password)` | Parse a PKCS#12 container into raw keys + certs |
+| `Pkcs11Provider` / `Pkcs11Session` | Load a PKCS#11 module and open a token session |
+| `Pkcs11Signer` / `Pkcs11Verifier` | HSM-backed XML-DSig signing / verification |
+| `Pkcs11Decryptor` / `Pkcs11Encryptor` / `Pkcs11KeyWrapper` | HSM-backed XML-Enc key transport / key wrap |
+
+`DsigContext(manager)` is permissive by default (W3C behaviour, inline `KeyInfo`
+extraction). Use `DsigContext.secure(manager)` for the secure-by-default profile
+(`trusted_keys_only`, `strict_verification`, `hmac_min_out_len=160`) recommended
+for federated identity, or `DsigContext.permissive(manager)` to be explicit.
+Each `VerifiedReference` now also reports `digest_verified` so callers can tell
+whether a reference's digest was actually checked.
 | `load_key_file(path)` | Load a key from file (auto-detect format) |
 | `load_rsa_private_pem(data)` | Load an RSA private key from PEM |
 | `load_x509_cert_pem(data)` | Load an X.509 certificate from PEM |

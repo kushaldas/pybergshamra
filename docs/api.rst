@@ -1474,18 +1474,19 @@ Cryptographic primitives
    Derive a key using PBKDF2 (RFC 8018).
 
    :param password: The password/secret bytes.
-   :param salt: Salt bytes.
+   :param salt: Salt bytes (must be at least 8 bytes, per RFC 8018 §4.1).
    :param iteration_count: Number of iterations.
    :param key_length: Desired output key length in bytes.
    :param prf_uri: PRF algorithm URI (e.g. ``Algorithm.HMAC_SHA256``).
    :returns: The derived key bytes.
+   :raises CryptoError: If the salt is shorter than 8 bytes.
 
    .. code-block:: python
 
       from pybergshamra import pbkdf2_derive, Algorithm
 
       key = pbkdf2_derive(
-          b"password", b"salt", 100_000, 32, Algorithm.HMAC_SHA256
+          b"password", b"random-salt-value", 100_000, 32, Algorithm.HMAC_SHA256
       )
 
 .. function:: hkdf_derive(shared_secret: bytes, key_length: int, prf_uri: str | None = None, salt: bytes | None = None, info: bytes | None = None) -> bytes
@@ -1555,3 +1556,99 @@ Certificate validation
           trusted_certs=[ca_der],
           skip_time_checks=True,
       )
+
+PKCS#12 container parsing
+-------------------------
+
+.. class:: Pkcs12Contents
+
+   The decoded contents of a PKCS#12 (``.p12``/``.pfx``) container.
+
+   .. property:: private_keys
+      :type: list[bytes]
+
+      PKCS#8 DER-encoded private keys found in the container.
+
+   .. property:: certificates
+      :type: list[bytes]
+
+      DER-encoded X.509 certificates found in the container.
+
+.. function:: parse_pkcs12(data: bytes, password: str) -> Pkcs12Contents
+
+   Parse a PKCS#12 container into its raw private keys and certificates.
+
+   Unlike :func:`load_pkcs12` (which returns a single ready-to-use :class:`Key`),
+   this exposes every private key and certificate in the container.
+
+HSM / PKCS#11
+-------------
+
+Drive XML-DSig and XML-Enc with key material that never leaves a hardware token
+(or SoftHSM2). Algorithms are passed as W3C URIs from :class:`Algorithm`; ECDSA
+additionally requires ``ec_curve`` ("P-256"/"P-384"/"P-521") because the URI
+does not encode the curve. Wire an operation into a context with
+:meth:`DsigContext.set_hsm_signer` / :meth:`DsigContext.set_hsm_verifier` or the
+``EncContext.set_hsm_*`` methods.
+
+.. class:: Pkcs11Provider(library_path: str)
+
+   A loaded PKCS#11 module bound to the first slot that has a token present.
+
+   .. method:: open_session(pin: str) -> Pkcs11Session
+
+      Open an authenticated read/write session using a UTF-8 user PIN.
+
+   .. method:: open_session_bytes(pin: bytes) -> Pkcs11Session
+
+      Open an authenticated read/write session using a raw-byte PIN.
+
+.. class:: Pkcs11Session
+
+   An authenticated PKCS#11 session. Pass it to the operation constructors below.
+
+.. class:: Pkcs11Signer(session: Pkcs11Session, key_label: str, algorithm: str, ec_curve: str | None = None)
+
+   Produces signatures using a private (or HMAC secret) key on the token.
+
+   .. method:: sign(data: bytes) -> bytes
+
+.. class:: Pkcs11Verifier(session: Pkcs11Session, key_label: str, algorithm: str, ec_curve: str | None = None)
+
+   Verifies signatures using a public (or HMAC secret) key on the token.
+
+   .. method:: verify(data: bytes, signature: bytes) -> bool
+
+.. class:: Pkcs11Decryptor(session: Pkcs11Session, key_label: str, algorithm: str, digest: str | None = None, mgf: str | None = None, oaep_label: bytes | None = None)
+
+   Decrypts a wrapped key (RSA-OAEP / RSA-PKCS1) using a private key on the token.
+
+   .. method:: decrypt(ciphertext: bytes) -> bytes
+
+.. class:: Pkcs11Encryptor(session: Pkcs11Session, key_label: str, algorithm: str, digest: str | None = None, mgf: str | None = None, oaep_label: bytes | None = None)
+
+   Encrypts a key (RSA-OAEP / RSA-PKCS1) using a public key on the token.
+
+   .. method:: encrypt(plaintext: bytes) -> bytes
+
+.. class:: Pkcs11KeyWrapper(session: Pkcs11Session, key_label: str, algorithm: str)
+
+   Wraps/unwraps symmetric keys with an AES KEK on the token (RFC 3394).
+
+   .. method:: wrap(key_data: bytes) -> bytes
+   .. method:: unwrap(wrapped: bytes) -> bytes
+
+.. code-block:: python
+
+   import pybergshamra
+   from pybergshamra import Algorithm
+
+   provider = pybergshamra.Pkcs11Provider("/usr/lib/softhsm/libsofthsm2.so")
+   session = provider.open_session("1234")
+
+   manager = pybergshamra.KeysManager()
+   ctx = pybergshamra.DsigContext(manager)
+   ctx.set_hsm_signer(
+       pybergshamra.Pkcs11Signer(session, "my-rsa-key", Algorithm.RSA_SHA256)
+   )
+   signed_xml = pybergshamra.sign(ctx, template_xml)

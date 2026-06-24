@@ -11,8 +11,10 @@ mod crypto;
 mod dsig;
 mod enc;
 mod errors;
+mod hsm;
 mod keys;
 mod loaders;
+mod pkcs12;
 mod x509;
 
 /// pybergshamra — Python bindings for Bergshamra XML Security.
@@ -32,6 +34,16 @@ fn pybergshamra(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<dsig::VerifiedKeyInfo>()?;
     m.add_class::<enc::EncContext>()?;
     m.add_class::<algorithms::Algorithm>()?;
+    m.add_class::<pkcs12::Pkcs12Contents>()?;
+
+    // ── HSM / PKCS#11 classes ────────────────────────────────────────
+    m.add_class::<hsm::Pkcs11Provider>()?;
+    m.add_class::<hsm::Pkcs11Session>()?;
+    m.add_class::<hsm::Pkcs11Signer>()?;
+    m.add_class::<hsm::Pkcs11Verifier>()?;
+    m.add_class::<hsm::Pkcs11Decryptor>()?;
+    m.add_class::<hsm::Pkcs11Encryptor>()?;
+    m.add_class::<hsm::Pkcs11KeyWrapper>()?;
 
     // ── Exceptions ───────────────────────────────────────────────────
     m.add(
@@ -106,6 +118,9 @@ fn pybergshamra(m: &Bound<'_, PyModule>) -> PyResult<()> {
     // ── KeyInfo builders ─────────────────────────────────────────────
     m.add_function(wrap_pyfunction!(loaders::build_x509_key_info, m)?)?;
     m.add_function(wrap_pyfunction!(loaders::build_x509_key_info_from_der, m)?)?;
+
+    // ── PKCS#12 ──────────────────────────────────────────────────────
+    m.add_function(wrap_pyfunction!(pkcs12::parse_pkcs12, m)?)?;
 
     Ok(())
 }

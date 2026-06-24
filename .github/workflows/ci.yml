@@ -4,6 +4,7 @@ on:
     paths:
       - 'src/**'
       - 'tests/**'
+      - 'hsm-test/**'
       - 'Cargo.lock'
       - 'Cargo.toml'
       - 'pyproject.toml'
@@ -51,6 +52,38 @@ jobs:
         retention-days: 1
         if-no-files-found: "error"
         compression-level: 0
+
+  # PKCS#11 / HSM integration tests, driven by SoftHSM2.
+  # Mirrors bergshamra's hsm-test/setup.sh: provision a software token, then run
+  # the PKCS#11 sign/verify/encrypt round-trips in tests/test_hsm.py.
+  hsm:
+    name: HSM (SoftHSM2 / PKCS#11)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+    - uses: actions/checkout@v5
+
+    - name: Install SoftHSM2 + OpenSC
+      run: sudo apt-get update && sudo apt-get install -y softhsm2 opensc
+
+    - uses: dtolnay/rust-toolchain@stable
+
+    - name: Install UV
+      run: curl -LsSf https://astral.sh/uv/install.sh | sh
+
+    - name: Build and install the extension
+      run: |
+        uv venv
+        uv pip install "maturin>=1,<2" pytest
+        uv run maturin develop
+
+    - name: Provision SoftHSM2 test token
+      run: bash hsm-test/setup.sh
+
+    - name: Run the test suite (incl. HSM)
+      run: |
+        export SOFTHSM2_CONF="$PWD/hsm-test/softhsm2.local.conf"
+        .venv/bin/python -m pytest tests/ -vvv
 
   #manylinux_aarch64:
     #runs-on: ubuntu-24-arm
