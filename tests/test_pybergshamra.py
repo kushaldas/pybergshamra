@@ -802,6 +802,50 @@ class TestVerification:
         else:
             pytest.fail("VerifyResult should be truthy for valid signature")
 
+    def test_verify_reference_coverage_flags(self):
+        """A valid same-document signature reports full local digest coverage."""
+        xml = (SIGNED_DIR / "valid-saml.xml").read_text()
+        mgr = KeysManager()
+        ctx = DsigContext(mgr)
+        ctx.insecure = True
+        ctx.skip_time_checks = True
+        result = pybergshamra.verify(ctx, xml)
+        assert result.is_valid
+        assert result.all_reference_digests_verified is True
+        assert result.has_unverified_references is False
+
+    def test_invalid_result_coverage_flags(self):
+        """Coverage flags are both False for an invalid result."""
+        xml = (SIGNED_DIR / "invalid-signature-changed-content.xml").read_text()
+        mgr = KeysManager()
+        ctx = DsigContext(mgr)
+        ctx.insecure = True
+        ctx.skip_time_checks = True
+        result = pybergshamra.verify(ctx, xml)
+        assert result.is_valid is False
+        assert result.all_reference_digests_verified is False
+        assert result.has_unverified_references is False
+
+    def test_verify_all_valid_saml(self):
+        """verify_all returns one VerifyResult per signature in the document."""
+        xml = (SIGNED_DIR / "valid-saml.xml").read_text()
+        mgr = KeysManager()
+        ctx = DsigContext(mgr)
+        ctx.insecure = True
+        ctx.skip_time_checks = True
+        results = pybergshamra.verify_all(ctx, xml)
+        assert isinstance(results, list)
+        assert len(results) >= 1
+        assert all(isinstance(r, VerifyResult) for r in results)
+        assert all(r.is_valid for r in results)
+
+    def test_verify_all_no_signature_raises(self):
+        """verify_all raises a document-level error when no Signature is present."""
+        mgr = KeysManager()
+        ctx = DsigContext(mgr)
+        with pytest.raises(pybergshamra.BergshamraError):
+            pybergshamra.verify_all(ctx, "<root><child/></root>")
+
 
 # ===========================================================================
 # 9. DSig — Signing

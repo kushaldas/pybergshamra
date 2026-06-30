@@ -406,6 +406,20 @@ class VerifyResult:
     def signature_node_id(self) -> Optional[int]:
         """The node ID of the <Signature> element, or None if invalid."""
         ...
+    @property
+    def has_unverified_references(self) -> bool:
+        """True if valid but at least one <Reference> digest was not computed
+        and verified locally (e.g. a ``cid:`` WS-Security MIME attachment).
+        Such references must be verified out of band. Always False if invalid.
+        """
+        ...
+    @property
+    def all_reference_digests_verified(self) -> bool:
+        """True only if valid, with at least one <Reference>, and every
+        reference digest was computed and verified locally. False for an
+        invalid result or a valid result with no references.
+        """
+        ...
     def __bool__(self) -> bool: ...
     def __repr__(self) -> str: ...
 
@@ -552,6 +566,21 @@ def verify(ctx: DsigContext, xml: str) -> VerifyResult:
     """Verify a signed XML document.
 
     Returns a VerifyResult (use ``bool(result)`` to check validity).
+    """
+    ...
+
+def verify_all(ctx: DsigContext, xml: str) -> list[VerifyResult]:
+    """Verify every <Signature> element in the document.
+
+    Returns one VerifyResult per signature in document order. Unlike
+    ``verify()`` (which reports only the first signature), each signature is
+    verified independently and a per-signature failure becomes an invalid entry
+    rather than aborting the call, so the list may mix valid and invalid
+    results. Use this for multi-signature documents such as SAML responses
+    signed at both the Response and Assertion levels.
+
+    Raises only for document-level failures (parse error, duplicate-ID
+    conflict, or no ``<Signature>`` element at all).
     """
     ...
 

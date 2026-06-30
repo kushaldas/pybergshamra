@@ -68,6 +68,7 @@ fn pybergshamra(m: &Bound<'_, PyModule>) -> PyResult<()> {
 
     // ── DSig functions ───────────────────────────────────────────────
     m.add_function(wrap_pyfunction!(dsig::verify, m)?)?;
+    m.add_function(wrap_pyfunction!(dsig::verify_all, m)?)?;
     m.add_function(wrap_pyfunction!(dsig::sign, m)?)?;
 
     // ── Enc functions ────────────────────────────────────────────────

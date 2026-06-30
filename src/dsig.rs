@@ -174,6 +174,32 @@ impl VerifyResult {
         self.signature_node_id_val
     }
 
+    /// Whether the signature is valid but at least one `<Reference>` digest was
+    /// **not** computed and verified locally (e.g. a `cid:` WS-Security MIME
+    /// attachment). Such references must be verified out of band before the
+    /// signature can be trusted. Always ``False`` for an invalid result.
+    #[getter]
+    fn has_unverified_references(&self) -> bool {
+        self.valid
+            && self
+                .references_data
+                .as_ref()
+                .is_some_and(|refs| refs.iter().any(|r| !r.digest_verified))
+    }
+
+    /// Whether the signature is valid, has at least one `<Reference>`, and
+    /// **every** reference digest was computed and verified locally. Returns
+    /// ``False`` for an invalid result and for a valid result with no
+    /// references (which provides no local digest coverage).
+    #[getter]
+    fn all_reference_digests_verified(&self) -> bool {
+        self.valid
+            && self
+                .references_data
+                .as_ref()
+                .is_some_and(|refs| !refs.is_empty() && refs.iter().all(|r| r.digest_verified))
+    }
+
     fn __bool__(&self) -> bool {
         self.valid
     }
@@ -473,6 +499,26 @@ pub fn verify(ctx: &DsigContext, xml: &str) -> PyResult<VerifyResult> {
     let rust_ctx = ctx.to_rust()?;
     let result = bergshamra_dsig::verify::verify(&rust_ctx, xml).map_err(to_pyerr)?;
     Ok(VerifyResult::from(result))
+}
+
+/// Verify **every** `<Signature>` element in the document, returning one
+/// VerifyResult per signature in document order.
+///
+/// Enveloped SAML responses are commonly signed in more than one place (the
+/// Response element and each Assertion). ``verify()`` reports only the first
+/// signature, so a caller that must confirm a particular object is covered
+/// could otherwise miss a valid signature that is not first in document order.
+/// Each signature is verified independently; a per-signature failure is
+/// reported as an invalid entry rather than aborting the whole call, so the
+/// returned list may mix valid and invalid results.
+///
+/// Raises an error only for document-level failures (parse error, duplicate-ID
+/// conflict, or no `<Signature>` element at all).
+#[pyfunction]
+pub fn verify_all(ctx: &DsigContext, xml: &str) -> PyResult<Vec<VerifyResult>> {
+    let rust_ctx = ctx.to_rust()?;
+    let results = bergshamra_dsig::verify::verify_all(&rust_ctx, xml).map_err(to_pyerr)?;
+    Ok(results.into_iter().map(VerifyResult::from).collect())
 }
 
 /// Sign an XML template and return the signed XML string.
