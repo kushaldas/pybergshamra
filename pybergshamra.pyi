@@ -592,6 +592,33 @@ def sign(ctx: DsigContext, template_xml: str) -> str:
     """
     ...
 
+def sign_enveloped(
+    ctx: DsigContext,
+    xml: str,
+    *,
+    reference_id: Optional[str] = None,
+    signature_method: Optional[str] = None,
+    digest_method: Optional[str] = None,
+    c14n_method: Optional[str] = None,
+    cert_pem: Optional[str] = None,
+) -> str:
+    """Build an enveloped ``<ds:Signature>`` and sign ``xml`` in one step.
+
+    Constructs a standard enveloped-signature template (SignedInfo with the
+    given canonicalization/signature methods; a single Reference to
+    ``#{reference_id}`` -- or the whole document when ``reference_id`` is None --
+    with enveloped-signature + exclusive-c14n transforms; KeyInfo/X509Data),
+    inserts it as the document element's first child, and signs it with the
+    context's first key (or HSM signer). Defaults: RSA-SHA256 / SHA-256 /
+    exclusive-c14n.
+
+    ``cert_pem`` (one or more PEM CERTIFICATE blocks) is embedded into
+    ``X509Data``. Note that ``"ID"`` is already treated as a default ID
+    attribute, so do **not** also call :meth:`DsigContext.add_id_attr` with
+    ``"ID"`` -- doing so double-registers it and raises a duplicate-ID error.
+    """
+    ...
+
 # Module-level functions — Enc
 
 def encrypt(ctx: EncContext, template_xml: str, data: bytes) -> str:

@@ -1406,3 +1406,50 @@ class TestSmoke:
         mgr = KeysManager()
         ctx = EncContext(mgr)
         assert ctx.disable_cipher_reference is False
+
+
+class TestSignEnveloped:
+    """High-level enveloped signing helper (sign_enveloped)."""
+
+    DOC = (
+        '<md:EntitiesDescriptor ID="ABC123" '
+        'xmlns:md="urn:oasis:names:tc:SAML:2.0:metadata">'
+        '<md:EntityDescriptor entityID="https://idp.example.org"/>'
+        '</md:EntitiesDescriptor>'
+    )
+
+    def _ctx(self):
+        key = pybergshamra.load_key_file(str(RSA_DIR / "rsa-2048-key.pem"))
+        key.name = "signer"
+        mgr = KeysManager(); mgr.add_key(key)
+        return DsigContext(mgr)
+
+    def _verify_ctx(self):
+        cert_pem = (RSA_DIR / "rsa-2048-cert.pem").read_bytes()
+        cert_key = pybergshamra.load_x509_cert_pem(cert_pem)
+        mgr = KeysManager(); mgr.add_key(cert_key)
+        ctx = DsigContext(mgr); ctx.insecure = True; ctx.skip_time_checks = True
+        return ctx
+
+    def test_sign_enveloped_reference_id_roundtrip(self):
+        cert_pem = (RSA_DIR / "rsa-2048-cert.pem").read_text()
+        signed = pybergshamra.sign_enveloped(
+            self._ctx(), self.DOC, reference_id="ABC123", cert_pem=cert_pem
+        )
+        assert signed.index("<ds:Signature") < signed.index("<md:EntityDescriptor")
+        assert "X509Certificate" in signed
+        res = pybergshamra.verify(self._verify_ctx(), signed)
+        assert res.is_valid
+        assert [r.uri for r in res.references] == ["#ABC123"]
+
+    def test_sign_enveloped_whole_document(self):
+        signed = pybergshamra.sign_enveloped(self._ctx(), self.DOC)
+        assert pybergshamra.verify(self._verify_ctx(), signed).is_valid
+
+    def test_sign_enveloped_tamper_detected(self):
+        cert_pem = (RSA_DIR / "rsa-2048-cert.pem").read_text()
+        signed = pybergshamra.sign_enveloped(
+            self._ctx(), self.DOC, reference_id="ABC123", cert_pem=cert_pem
+        )
+        tampered = signed.replace("idp.example.org", "evil.example.org")
+        assert not pybergshamra.verify(self._verify_ctx(), tampered).is_valid

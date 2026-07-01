@@ -1,9 +1,13 @@
 [package]
 name = "pybergshamra"
-version = "0.5.1"
+version = "0.6.2"
 edition = "2021"
 description = "Python bindings for the Bergshamra XML Security library"
 license = "BSD-2-Clause"
+repository = "https://github.com/kushaldas/pybergshamra"
+homepage = "https://github.com/kushaldas/pybergshamra"
+documentation = "https://pybergshamra.readthedocs.org/"
+readme = "README.md"
 rust-version = "1.85"
 
 [lib]
@@ -12,12 +16,12 @@ crate-type = ["cdylib"]
 
 [dependencies]
 pyo3 = { version = "0.29.0", features = ["extension-module", "abi3-py310"] }
-bergshamra-core = { version = "0.6.1", path = "../bergshamra/crates/bergshamra-core" }
-bergshamra-c14n = { version = "0.6.1", path = "../bergshamra/crates/bergshamra-c14n" }
-bergshamra-keys = { version = "0.6.1", path = "../bergshamra/crates/bergshamra-keys", features = ["legacy-algorithms"] }
-bergshamra-dsig = { version = "0.6.1", path = "../bergshamra/crates/bergshamra-dsig" }
-bergshamra-enc = { version = "0.6.1", path = "../bergshamra/crates/bergshamra-enc" }
-bergshamra-xml = { version = "0.6.1", path = "../bergshamra/crates/bergshamra-xml" }
-bergshamra-crypto = { version = "0.6.1", path = "../bergshamra/crates/bergshamra-crypto" }
-bergshamra-pkcs12 = { version = "0.6.1", path = "../bergshamra/crates/bergshamra-pkcs12" }
-kryptering = { version = "0.4.0", default-features = false, features = ["legacy", "post-quantum", "pkcs11"] }
+bergshamra-core = "0.6.2"
+bergshamra-c14n = "0.6.2"
+bergshamra-keys = { version = "0.6.2", features = ["legacy-algorithms"] }
+bergshamra-dsig = "0.6.2"
+bergshamra-enc = "0.6.2"
+bergshamra-xml = "0.6.2"
+bergshamra-crypto = "0.6.2"
+bergshamra-pkcs12 = "0.6.2"
+kryptering = { version = "0.4.1", default-features = false, features = ["legacy", "post-quantum", "pkcs11"] }

@@ -530,3 +530,168 @@ pub fn sign(ctx: &DsigContext, template_xml: &str) -> PyResult<String> {
     let rust_ctx = ctx.to_rust()?;
     bergshamra_dsig::sign::sign(&rust_ctx, template_xml).map_err(to_pyerr)
 }
+
+/// Build an enveloped `<ds:Signature>` and sign ``xml`` in one step.
+///
+/// This is the high-level entry point for the common case (e.g. signing SAML
+/// metadata): it constructs a standard enveloped-signature template
+/// (``SignedInfo`` with the given canonicalization and signature methods; a
+/// single ``Reference`` to ``#{reference_id}`` — or the whole document when
+/// ``reference_id`` is ``None`` — carrying the enveloped-signature and
+/// exclusive-c14n transforms; ``KeyInfo``/``X509Data``), inserts it as the
+/// document element's first child, and signs it with the context's key (or HSM
+/// signer). The signing key is the first key in the context's ``KeysManager``.
+///
+/// ``cert_pem`` (one or more PEM ``CERTIFICATE`` blocks) is embedded into
+/// ``X509Data``; when omitted, an empty ``<ds:X509Data/>`` is emitted and the
+/// signer fills it from the signing key's certificate chain if available.
+///
+/// To resolve ``#{reference_id}`` the context must register the ID attribute
+/// name via :meth:`DsigContext.add_id_attr` (e.g. ``"ID"``).
+#[pyfunction]
+#[pyo3(signature = (ctx, xml, *, reference_id=None, signature_method=None, digest_method=None, c14n_method=None, cert_pem=None))]
+#[allow(clippy::too_many_arguments)]
+pub fn sign_enveloped(
+    ctx: &DsigContext,
+    xml: &str,
+    reference_id: Option<&str>,
+    signature_method: Option<&str>,
+    digest_method: Option<&str>,
+    c14n_method: Option<&str>,
+    cert_pem: Option<&str>,
+) -> PyResult<String> {
+    use bergshamra_core::algorithm;
+
+    let sig_method = signature_method.unwrap_or(algorithm::RSA_SHA256);
+    let dig_method = digest_method.unwrap_or(algorithm::SHA256);
+    let c14n = c14n_method.unwrap_or(algorithm::EXC_C14N);
+    let ref_uri = match reference_id {
+        Some(id) => format!("#{id}"),
+        None => String::new(),
+    };
+
+    let key_info = build_key_info(cert_pem);
+    let signature = format!(
+        "<ds:Signature xmlns:ds=\"http://www.w3.org/2000/09/xmldsig#\">\
+<ds:SignedInfo>\
+<ds:CanonicalizationMethod Algorithm=\"{c14n}\"/>\
+<ds:SignatureMethod Algorithm=\"{sig_method}\"/>\
+<ds:Reference URI=\"{ref_uri}\">\
+<ds:Transforms>\
+<ds:Transform Algorithm=\"{enveloped}\"/>\
+<ds:Transform Algorithm=\"{c14n}\"/>\
+</ds:Transforms>\
+<ds:DigestMethod Algorithm=\"{dig_method}\"/>\
+<ds:DigestValue></ds:DigestValue>\
+</ds:Reference>\
+</ds:SignedInfo>\
+<ds:SignatureValue></ds:SignatureValue>\
+{key_info}\
+</ds:Signature>",
+        enveloped = algorithm::ENVELOPED_SIGNATURE,
+    );
+
+    let template = insert_first_child_of_root(xml, &signature)?;
+    let rust_ctx = ctx.to_rust()?;
+    bergshamra_dsig::sign::sign(&rust_ctx, &template).map_err(to_pyerr)
+}
+
+/// Build the `<ds:KeyInfo>` fragment, embedding any PEM certificates found in
+/// ``cert_pem`` as `<ds:X509Certificate>` elements. With no certificate an
+/// empty `<ds:X509Data/>` is emitted for the signer to populate.
+fn build_key_info(cert_pem: Option<&str>) -> String {
+    let certs: Vec<String> = cert_pem.map(pem_certificate_bodies).unwrap_or_default();
+    if certs.is_empty() {
+        return "<ds:KeyInfo><ds:X509Data/></ds:KeyInfo>".to_string();
+    }
+    let mut x509 = String::from("<ds:KeyInfo><ds:X509Data>");
+    for body in certs {
+        x509.push_str("<ds:X509Certificate>");
+        x509.push_str(&body);
+        x509.push_str("</ds:X509Certificate>");
+    }
+    x509.push_str("</ds:X509Data></ds:KeyInfo>");
+    x509
+}
+
+/// Extract the base64 body of each PEM ``CERTIFICATE`` block (whitespace
+/// stripped), so it can be placed inside an `<ds:X509Certificate>` element.
+fn pem_certificate_bodies(pem: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut body = String::new();
+    let mut inside = false;
+    for line in pem.lines() {
+        let t = line.trim();
+        if t.starts_with("-----BEGIN CERTIFICATE-----") {
+            inside = true;
+            body.clear();
+        } else if t.starts_with("-----END CERTIFICATE-----") {
+            if inside && !body.is_empty() {
+                out.push(std::mem::take(&mut body));
+            }
+            inside = false;
+        } else if inside {
+            body.push_str(t);
+        }
+    }
+    out
+}
+
+/// Splice ``fragment`` in as the first child of the document's root element by
+/// inserting it immediately after the root element's opening tag. Uses uppsala
+/// (via bergshamra-xml) to locate the root, then scans for the tag-closing
+/// ``>`` while respecting quoted attribute values.
+fn insert_first_child_of_root(xml: &str, fragment: &str) -> PyResult<String> {
+    let doc = bergshamra_xml::uppsala::parse(xml)
+        .map_err(|e| to_pyerr(bergshamra_core::Error::XmlParse(e.to_string())))?;
+    let root = doc.document_element().ok_or_else(|| {
+        to_pyerr(bergshamra_core::Error::XmlStructure(
+            "document has no root element to sign".to_string(),
+        ))
+    })?;
+    let range = doc.node_range(root).ok_or_else(|| {
+        to_pyerr(bergshamra_core::Error::XmlStructure(
+            "could not locate the root element".to_string(),
+        ))
+    })?;
+    let offset = open_tag_end(xml, range.start).ok_or_else(|| {
+        to_pyerr(bergshamra_core::Error::XmlStructure(
+            "cannot envelope-sign a self-closing root element".to_string(),
+        ))
+    })?;
+    let mut out = String::with_capacity(xml.len() + fragment.len());
+    out.push_str(&xml[..offset]);
+    out.push_str(fragment);
+    out.push_str(&xml[offset..]);
+    Ok(out)
+}
+
+/// Return the byte offset just past the ``>`` that closes the start tag
+/// beginning at ``start``. Returns ``None`` for a self-closing (`/>`) tag.
+fn open_tag_end(xml: &str, start: usize) -> Option<usize> {
+    let bytes = xml.as_bytes();
+    let mut i = start;
+    let mut quote: Option<u8> = None;
+    while i < bytes.len() {
+        let c = bytes[i];
+        match quote {
+            Some(q) => {
+                if c == q {
+                    quote = None;
+                }
+            }
+            None => match c {
+                b'"' | b'\'' => quote = Some(c),
+                b'>' => {
+                    if i > start && bytes[i - 1] == b'/' {
+                        return None; // self-closing root
+                    }
+                    return Some(i + 1);
+                }
+                _ => {}
+            },
+        }
+        i += 1;
+    }
+    None
+}

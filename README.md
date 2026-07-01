@@ -178,7 +178,8 @@ each taking an allow-list of permitted algorithm URIs. The HSM operation classes
 | `EncContext(manager)` | Configuration for XML-Enc encrypt/decrypt |
 | `C14nMode` | Canonicalization mode (Inclusive, Exclusive, etc.) |
 | `VerifyResult` | Result of signature verification |
-| `verify(ctx, xml)` | Verify a signed XML document |
+| `verify(ctx, xml)` | Verify the first `<Signature>` in an XML document |
+| `verify_all(ctx, xml)` | Verify every `<Signature>` (e.g. multi-signature SAML) |
 | `sign(ctx, template)` | Sign an XML template |
 | `encrypt(ctx, template, data)` | Encrypt data with an XML template |
 | `decrypt(ctx, xml)` | Decrypt an XML document |
