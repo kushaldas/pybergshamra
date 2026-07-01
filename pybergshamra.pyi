@@ -383,7 +383,9 @@ class VerifiedKeyInfo:
 class VerifyResult:
     """Result of signature verification.
 
-    Use ``bool(result)`` to check validity, or inspect properties.
+    Use ``bool(result)`` to check signature validity. If your application
+    requires every reference digest to be computed locally, also require
+    ``all_reference_digests_verified`` or reject ``has_unverified_references``.
     """
 
     @property
@@ -430,7 +432,22 @@ class DsigContext:
     then call ``verify()`` or ``sign()``.
     """
 
-    def __init__(self, keys_manager: KeysManager) -> None: ...
+    def __init__(
+        self,
+        keys_manager: KeysManager,
+        *,
+        secure_defaults: bool = True,
+        trusted_keys_only: Optional[bool] = None,
+        strict_verification: Optional[bool] = None,
+        hmac_min_out_len: Optional[int] = None,
+    ) -> None:
+        """Create a DSig context.
+
+        Secure defaults are enabled unless ``secure_defaults=False`` is passed
+        as a keyword argument. Individual secure defaults can also be overridden
+        with keyword-only arguments.
+        """
+        ...
     @staticmethod
     def secure(keys_manager: KeysManager) -> DsigContext:
         """Secure-by-default context (mirrors Rust ``DsigContext::new()``):
@@ -440,8 +457,9 @@ class DsigContext:
     @staticmethod
     def permissive(keys_manager: KeysManager) -> DsigContext:
         """Permissive context (mirrors Rust ``DsigContext::new_permissive()``):
-        standard W3C behaviour with inline ``KeyInfo`` extraction. Same as the
-        default ``DsigContext(manager)`` constructor."""
+        standard W3C behaviour with inline ``KeyInfo`` extraction. Prefer
+        ``DsigContext(manager, secure_defaults=False)`` for new code so the
+        opt-out is explicit at construction."""
         ...
     def set_hsm_signer(self, signer: Pkcs11Signer) -> None:
         """Use an HSM-backed (PKCS#11) signer for signing."""
@@ -565,7 +583,9 @@ class EncContext:
 def verify(ctx: DsigContext, xml: str) -> VerifyResult:
     """Verify a signed XML document.
 
-    Returns a VerifyResult (use ``bool(result)`` to check validity).
+    Returns a VerifyResult. ``bool(result)`` checks signature validity only;
+    callers that need full local digest coverage should also require
+    ``result.all_reference_digests_verified``.
     """
     ...
 

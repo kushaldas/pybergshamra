@@ -65,8 +65,10 @@ manager.add_key(key)
 ctx = pybergshamra.DsigContext(manager)
 result = pybergshamra.verify(ctx, xml)
 
-if result:
+if result and result.all_reference_digests_verified:
     print("Valid!", result.key_info.algorithm)
+elif result:
+    print("Valid signature, but at least one reference needs out-of-band checking")
 else:
     print("Invalid:", result.reason)
 ```
@@ -191,10 +193,10 @@ each taking an allow-list of permitted algorithm URIs. The HSM operation classes
 | `Pkcs11Signer` / `Pkcs11Verifier` | HSM-backed XML-DSig signing / verification |
 | `Pkcs11Decryptor` / `Pkcs11Encryptor` / `Pkcs11KeyWrapper` | HSM-backed XML-Enc key transport / key wrap |
 
-`DsigContext(manager)` is permissive by default (W3C behaviour, inline `KeyInfo`
-extraction). Use `DsigContext.secure(manager)` for the secure-by-default profile
-(`trusted_keys_only`, `strict_verification`, `hmac_min_out_len=160`) recommended
-for federated identity, or `DsigContext.permissive(manager)` to be explicit.
+`DsigContext(manager)` is secure by default
+(`trusted_keys_only`, `strict_verification`, `hmac_min_out_len=160`). If you need
+standard W3C behaviour with inline `KeyInfo` extraction, opt out explicitly with
+keyword arguments, for example `DsigContext(manager, secure_defaults=False)`.
 Each `VerifiedReference` now also reports `digest_verified` so callers can tell
 whether a reference's digest was actually checked.
 | `load_key_file(path)` | Load a key from file (auto-detect format) |

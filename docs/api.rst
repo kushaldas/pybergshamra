@@ -1081,13 +1081,22 @@ Digital signatures
 DsigContext
 ^^^^^^^^^^^
 
-.. class:: DsigContext(keys_manager: KeysManager)
+.. class:: DsigContext(keys_manager: KeysManager, *, secure_defaults: bool = True, trusted_keys_only: bool | None = None, strict_verification: bool | None = None, hmac_min_out_len: int | None = None)
 
    Context for XML Digital Signature operations. Holds configuration and a
    :class:`KeysManager`. Build one, set properties, then call :func:`verify`
    or :func:`sign`.
 
    :param keys_manager: The key store to use for sign/verify operations.
+   :param secure_defaults: Enable secure defaults. Defaults to ``True``.
+      Pass ``False`` as a keyword argument only when standard W3C XML-DSig
+      behaviour with inline ``KeyInfo`` extraction is required.
+   :param trusted_keys_only: Optional keyword-only override for inline
+      ``KeyInfo`` extraction.
+   :param strict_verification: Optional keyword-only override for strict
+      reference target validation.
+   :param hmac_min_out_len: Optional keyword-only override for the minimum HMAC
+      output length, in bits.
 
    .. code-block:: python
 
@@ -1132,13 +1141,13 @@ DsigContext
       :type: bool
 
       Only use pre-configured keys, skip inline KeyInfo extraction.
-      Default: ``False``.
+      Default: ``True``.
 
    .. attribute:: strict_verification
       :type: bool
 
       Enforce strict reference target validation (anti-XSW protection).
-      Default: ``False``.
+      Default: ``True``.
 
       .. code-block:: python
 
@@ -1149,7 +1158,8 @@ DsigContext
    .. attribute:: hmac_min_out_len
       :type: int
 
-      Minimum HMAC output length in bits. ``0`` means use the spec default.
+      Minimum HMAC output length in bits. Default: ``160``. ``0`` means use the
+      XML-DSig spec default and should only be used for compatibility.
 
    .. attribute:: base_dir
       :type: str | None
@@ -1180,7 +1190,10 @@ VerifyResult
 
 .. class:: VerifyResult
 
-   Result of signature verification. Use ``bool(result)`` to check validity.
+   Result of signature verification. ``bool(result)`` checks signature validity
+   only. Applications that require every ``<Reference>`` digest to be checked
+   locally should also require :attr:`all_reference_digests_verified` or reject
+   :attr:`has_unverified_references`.
 
    .. attribute:: is_valid
       :type: bool
@@ -1227,11 +1240,13 @@ VerifyResult
    .. code-block:: python
 
       result = pybergshamra.verify(ctx, xml)
-      if result:
+      if result and result.all_reference_digests_verified:
           print("Valid!")
           for ref in result.references:
               print(f"  Reference URI: {ref.uri}")
           print(f"  Key algorithm: {result.key_info.algorithm}")
+      elif result:
+          print("Valid signature, but some references need out-of-band checks")
       else:
           print(f"Invalid: {result.reason}")
 

@@ -131,7 +131,9 @@ impl From<&RustVerifiedKeyInfo> for VerifiedKeyInfo {
 
 /// Result of signature verification.
 ///
-/// Use ``bool(result)`` to check validity, or inspect properties.
+/// Use ``bool(result)`` to check signature validity. If your application needs
+/// every reference digest computed locally, also require
+/// ``all_reference_digests_verified`` or reject ``has_unverified_references``.
 #[pyclass(name = "VerifyResult", skip_from_py_object)]
 #[derive(Clone)]
 pub struct VerifyResult {
@@ -278,6 +280,37 @@ pub struct DsigContext {
 }
 
 impl DsigContext {
+    fn from_security_defaults(
+        keys_manager: &KeysManager,
+        secure_defaults: bool,
+        trusted_keys_only: Option<bool>,
+        strict_verification: Option<bool>,
+        hmac_min_out_len: Option<usize>,
+    ) -> Self {
+        let default_trusted_keys_only = secure_defaults;
+        let default_strict_verification = secure_defaults;
+        let default_hmac_min_out_len = if secure_defaults { 160 } else { 0 };
+
+        DsigContext {
+            keys_manager: keys_manager.clone(),
+            id_attrs: Vec::new(),
+            url_maps: Vec::new(),
+            hmac_min_out_len: hmac_min_out_len.unwrap_or(default_hmac_min_out_len),
+            debug: false,
+            base_dir: None,
+            insecure: false,
+            verify_keys: false,
+            verification_time: None,
+            skip_time_checks: false,
+            enabled_key_data_x509: false,
+            trusted_keys_only: trusted_keys_only.unwrap_or(default_trusted_keys_only),
+            strict_verification: strict_verification.unwrap_or(default_strict_verification),
+            base_secure: secure_defaults,
+            hsm_signer: None,
+            hsm_verifier: None,
+        }
+    }
+
     /// Build the Rust DsigContext from Python-side state.
     fn to_rust(&self) -> PyResult<RustDsigContext> {
         let mgr_guard = self
@@ -322,25 +355,21 @@ impl DsigContext {
 #[pymethods]
 impl DsigContext {
     #[new]
-    fn new(keys_manager: &KeysManager) -> Self {
-        DsigContext {
-            keys_manager: keys_manager.clone(),
-            id_attrs: Vec::new(),
-            url_maps: Vec::new(),
-            hmac_min_out_len: 0,
-            debug: false,
-            base_dir: None,
-            insecure: false,
-            verify_keys: false,
-            verification_time: None,
-            skip_time_checks: false,
-            enabled_key_data_x509: false,
-            trusted_keys_only: false,
-            strict_verification: false,
-            base_secure: false,
-            hsm_signer: None,
-            hsm_verifier: None,
-        }
+    #[pyo3(signature = (keys_manager, *, secure_defaults=true, trusted_keys_only=None, strict_verification=None, hmac_min_out_len=None))]
+    fn new(
+        keys_manager: &KeysManager,
+        secure_defaults: bool,
+        trusted_keys_only: Option<bool>,
+        strict_verification: Option<bool>,
+        hmac_min_out_len: Option<usize>,
+    ) -> Self {
+        DsigContext::from_security_defaults(
+            keys_manager,
+            secure_defaults,
+            trusted_keys_only,
+            strict_verification,
+            hmac_min_out_len,
+        )
     }
 
     /// Build a secure-by-default context, equivalent to Rust
@@ -350,20 +379,16 @@ impl DsigContext {
     /// ``RustDsigContext::new()``). Recommended for federated-identity / SAML.
     #[staticmethod]
     fn secure(keys_manager: &KeysManager) -> Self {
-        let mut ctx = DsigContext::new(keys_manager);
-        ctx.base_secure = true;
-        ctx.trusted_keys_only = true;
-        ctx.strict_verification = true;
-        ctx.hmac_min_out_len = 160;
-        ctx
+        DsigContext::from_security_defaults(keys_manager, true, None, None, None)
     }
 
     /// Build a permissive context (mirrors Rust ``DsigContext::new_permissive()``):
-    /// standard W3C behaviour with inline ``KeyInfo`` extraction enabled. This is
-    /// the same configuration as the default ``DsigContext(manager)`` constructor.
+    /// standard W3C behaviour with inline ``KeyInfo`` extraction enabled.
+    /// Prefer ``DsigContext(manager, secure_defaults=False)`` when constructing
+    /// permissive contexts from Python code so the opt-out is explicit.
     #[staticmethod]
     fn permissive(keys_manager: &KeysManager) -> Self {
-        DsigContext::new(keys_manager)
+        DsigContext::from_security_defaults(keys_manager, false, None, None, None)
     }
 
     /// Use an HSM-backed signer (PKCS#11) for the signing operation.
@@ -493,7 +518,9 @@ impl DsigContext {
 
 /// Verify a signed XML document.
 ///
-/// Returns a VerifyResult (use ``bool(result)`` to check validity).
+/// Returns a VerifyResult. ``bool(result)`` reports signature validity; callers
+/// that require every reference digest to be checked locally should also inspect
+/// ``all_reference_digests_verified`` / ``has_unverified_references``.
 #[pyfunction]
 pub fn verify(ctx: &DsigContext, xml: &str) -> PyResult<VerifyResult> {
     let rust_ctx = ctx.to_rust()?;
@@ -562,15 +589,15 @@ pub fn sign_enveloped(
 ) -> PyResult<String> {
     use bergshamra_core::algorithm;
 
-    let sig_method = signature_method.unwrap_or(algorithm::RSA_SHA256);
-    let dig_method = digest_method.unwrap_or(algorithm::SHA256);
-    let c14n = c14n_method.unwrap_or(algorithm::EXC_C14N);
+    let sig_method = validate_signature_method(signature_method.unwrap_or(algorithm::RSA_SHA256))?;
+    let dig_method = validate_digest_method(digest_method.unwrap_or(algorithm::SHA256))?;
+    let c14n = validate_c14n_method(c14n_method.unwrap_or(algorithm::EXC_C14N))?;
     let ref_uri = match reference_id {
-        Some(id) => format!("#{id}"),
+        Some(id) => format!("#{}", escape_xml_attr(id)),
         None => String::new(),
     };
 
-    let key_info = build_key_info(cert_pem);
+    let key_info = build_key_info(cert_pem)?;
     let signature = format!(
         "<ds:Signature xmlns:ds=\"http://www.w3.org/2000/09/xmldsig#\">\
 <ds:SignedInfo>\
@@ -596,13 +623,59 @@ pub fn sign_enveloped(
     bergshamra_dsig::sign::sign(&rust_ctx, &template).map_err(to_pyerr)
 }
 
+fn validate_signature_method(uri: &str) -> PyResult<&str> {
+    bergshamra_crypto::sign::from_uri(uri).map_err(to_pyerr)?;
+    Ok(uri)
+}
+
+fn validate_digest_method(uri: &str) -> PyResult<&str> {
+    bergshamra_crypto::digest::from_uri(uri).map_err(to_pyerr)?;
+    Ok(uri)
+}
+
+fn validate_c14n_method(uri: &str) -> PyResult<&str> {
+    if bergshamra_c14n::C14nMode::from_uri(uri).is_some() {
+        Ok(uri)
+    } else {
+        Err(to_pyerr(bergshamra_core::Error::UnsupportedAlgorithm(
+            format!("canonicalization algorithm: {uri}"),
+        )))
+    }
+}
+
+fn escape_xml_attr(value: &str) -> String {
+    let mut out = String::with_capacity(value.len());
+    for ch in value.chars() {
+        match ch {
+            '&' => out.push_str("&amp;"),
+            '"' => out.push_str("&quot;"),
+            '\'' => out.push_str("&apos;"),
+            '<' => out.push_str("&lt;"),
+            '>' => out.push_str("&gt;"),
+            _ => out.push(ch),
+        }
+    }
+    out
+}
+
 /// Build the `<ds:KeyInfo>` fragment, embedding any PEM certificates found in
 /// ``cert_pem`` as `<ds:X509Certificate>` elements. With no certificate an
 /// empty `<ds:X509Data/>` is emitted for the signer to populate.
-fn build_key_info(cert_pem: Option<&str>) -> String {
-    let certs: Vec<String> = cert_pem.map(pem_certificate_bodies).unwrap_or_default();
+fn build_key_info(cert_pem: Option<&str>) -> PyResult<String> {
+    let certs: Vec<String> = match cert_pem {
+        Some(pem) => {
+            let certs = pem_certificate_bodies(pem)?;
+            if certs.is_empty() && !pem.trim().is_empty() {
+                return Err(pyo3::exceptions::PyValueError::new_err(
+                    "cert_pem does not contain a CERTIFICATE block",
+                ));
+            }
+            certs
+        }
+        None => Vec::new(),
+    };
     if certs.is_empty() {
-        return "<ds:KeyInfo><ds:X509Data/></ds:KeyInfo>".to_string();
+        return Ok("<ds:KeyInfo><ds:X509Data/></ds:KeyInfo>".to_string());
     }
     let mut x509 = String::from("<ds:KeyInfo><ds:X509Data>");
     for body in certs {
@@ -611,12 +684,12 @@ fn build_key_info(cert_pem: Option<&str>) -> String {
         x509.push_str("</ds:X509Certificate>");
     }
     x509.push_str("</ds:X509Data></ds:KeyInfo>");
-    x509
+    Ok(x509)
 }
 
 /// Extract the base64 body of each PEM ``CERTIFICATE`` block (whitespace
 /// stripped), so it can be placed inside an `<ds:X509Certificate>` element.
-fn pem_certificate_bodies(pem: &str) -> Vec<String> {
+fn pem_certificate_bodies(pem: &str) -> PyResult<Vec<String>> {
     let mut out = Vec::new();
     let mut body = String::new();
     let mut inside = false;
@@ -627,14 +700,34 @@ fn pem_certificate_bodies(pem: &str) -> Vec<String> {
             body.clear();
         } else if t.starts_with("-----END CERTIFICATE-----") {
             if inside && !body.is_empty() {
+                if body.len() % 4 != 0 {
+                    return Err(pyo3::exceptions::PyValueError::new_err(
+                        "cert_pem contains invalid base64 certificate data",
+                    ));
+                }
                 out.push(std::mem::take(&mut body));
             }
             inside = false;
         } else if inside {
-            body.push_str(t);
+            for ch in t.chars() {
+                if ch.is_ascii_alphanumeric() || ch == '+' || ch == '/' || ch == '=' {
+                    body.push(ch);
+                } else if ch.is_whitespace() {
+                    continue;
+                } else {
+                    return Err(pyo3::exceptions::PyValueError::new_err(
+                        "cert_pem contains non-base64 certificate data",
+                    ));
+                }
+            }
         }
     }
-    out
+    if inside {
+        return Err(pyo3::exceptions::PyValueError::new_err(
+            "cert_pem contains an unterminated CERTIFICATE block",
+        ));
+    }
+    Ok(out)
 }
 
 /// Splice ``fragment`` in as the first child of the document's root element by
