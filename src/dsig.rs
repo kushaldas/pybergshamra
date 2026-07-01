@@ -573,8 +573,12 @@ pub fn sign(ctx: &DsigContext, template_xml: &str) -> PyResult<String> {
 /// ``X509Data``; when omitted, an empty ``<ds:X509Data/>`` is emitted and the
 /// signer fills it from the signing key's certificate chain if available.
 ///
-/// To resolve ``#{reference_id}`` the context must register the ID attribute
-/// name via :meth:`DsigContext.add_id_attr` (e.g. ``"ID"``).
+/// The common ID attribute names — ``Id``, ``ID``, ``id`` and ``AssertionID``
+/// — are recognized by default, so a ``reference_id`` carried by one of those
+/// attributes (such as the ``ID`` on SAML metadata) resolves with no extra
+/// configuration. Do **not** call :meth:`DsigContext.add_id_attr` with one of
+/// these names — double-registering a default raises a duplicate-ID error. Use
+/// :meth:`DsigContext.add_id_attr` only for a *non-default* ID attribute name.
 #[pyfunction]
 #[pyo3(signature = (ctx, xml, *, reference_id=None, signature_method=None, digest_method=None, c14n_method=None, cert_pem=None))]
 #[allow(clippy::too_many_arguments)]
@@ -689,7 +693,14 @@ fn build_key_info(cert_pem: Option<&str>) -> PyResult<String> {
 
 /// Extract the base64 body of each PEM ``CERTIFICATE`` block (whitespace
 /// stripped), so it can be placed inside an `<ds:X509Certificate>` element.
+///
+/// Each body is validated by **actually base64-decoding it** with the standard
+/// engine, so malformed data — stray characters, bad padding, or a non-multiple
+/// of-4 length — is rejected with a clear `ValueError` rather than being
+/// embedded verbatim and failing in a less obvious way downstream.
 fn pem_certificate_bodies(pem: &str) -> PyResult<Vec<String>> {
+    use base64::Engine;
+
     let mut out = Vec::new();
     let mut body = String::new();
     let mut inside = false;
@@ -700,25 +711,22 @@ fn pem_certificate_bodies(pem: &str) -> PyResult<Vec<String>> {
             body.clear();
         } else if t.starts_with("-----END CERTIFICATE-----") {
             if inside && !body.is_empty() {
-                if body.len() % 4 != 0 {
-                    return Err(pyo3::exceptions::PyValueError::new_err(
-                        "cert_pem contains invalid base64 certificate data",
-                    ));
-                }
+                base64::engine::general_purpose::STANDARD
+                    .decode(&body)
+                    .map_err(|e| {
+                        pyo3::exceptions::PyValueError::new_err(format!(
+                            "cert_pem contains invalid base64 certificate data: {e}"
+                        ))
+                    })?;
                 out.push(std::mem::take(&mut body));
             }
             inside = false;
         } else if inside {
             for ch in t.chars() {
-                if ch.is_ascii_alphanumeric() || ch == '+' || ch == '/' || ch == '=' {
-                    body.push(ch);
-                } else if ch.is_whitespace() {
+                if ch.is_whitespace() {
                     continue;
-                } else {
-                    return Err(pyo3::exceptions::PyValueError::new_err(
-                        "cert_pem contains non-base64 certificate data",
-                    ));
                 }
+                body.push(ch);
             }
         }
     }

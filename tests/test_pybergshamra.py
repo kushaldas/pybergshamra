@@ -1502,3 +1502,14 @@ class TestSignEnveloped:
                 self.DOC,
                 cert_pem="<ds:Object>not a certificate</ds:Object>",
             )
+
+    def test_sign_enveloped_rejects_bad_base64_padding(self):
+        # Valid base64 alphabet but a non-multiple-of-4 length / bad padding:
+        # the body must be actually decoded, not just alphabet-checked.
+        bad_cert = (
+            "-----BEGIN CERTIFICATE-----\n"
+            "MIIBIjANBg=A\n"  # stray '=' mid-stream, invalid base64
+            "-----END CERTIFICATE-----\n"
+        )
+        with pytest.raises(ValueError):
+            pybergshamra.sign_enveloped(self._ctx(), self.DOC, cert_pem=bad_cert)

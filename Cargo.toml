@@ -25,3 +25,4 @@ bergshamra-xml = "0.6.2"
 bergshamra-crypto = "0.6.2"
 bergshamra-pkcs12 = "0.6.2"
 kryptering = { version = "0.4.1", default-features = false, features = ["legacy", "post-quantum", "pkcs11"] }
+base64 = "0.22"
