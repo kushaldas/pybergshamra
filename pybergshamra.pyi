@@ -637,6 +637,10 @@ def sign_enveloped(
     context's first key (or HSM signer). Defaults: RSA-SHA256 / SHA-256 /
     exclusive-c14n.
 
+    ``reference_id`` must be a raw ID value **without** a leading ``#``; an
+    empty string or a ``#``-prefixed value raises ``ValueError``. Pass ``None``
+    to sign the whole document.
+
     ``cert_pem`` (one or more PEM CERTIFICATE blocks) is embedded into
     ``X509Data``. Note that ``"ID"`` is already treated as a default ID
     attribute, so do **not** also call :meth:`DsigContext.add_id_attr` with

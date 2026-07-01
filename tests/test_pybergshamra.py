@@ -1529,3 +1529,22 @@ class TestSignEnveloped:
         signed = pybergshamra.sign_enveloped(self._ctx(), doc, reference_id="X")
         assert signed.index("<ds:Signature") < signed.index("</root>")
         assert pybergshamra.verify(self._verify_ctx(), signed).is_valid
+
+    def test_sign_enveloped_rejects_empty_reference_id(self):
+        with pytest.raises(ValueError):
+            pybergshamra.sign_enveloped(self._ctx(), self.DOC, reference_id="")
+
+    def test_sign_enveloped_rejects_hash_prefixed_reference_id(self):
+        # A raw ID is expected; a leading '#' would otherwise produce URI="##..".
+        with pytest.raises(ValueError):
+            pybergshamra.sign_enveloped(
+                self._ctx(), self.DOC, reference_id="#ABC123"
+            )
+
+    def test_sign_enveloped_rejects_empty_certificate_block(self):
+        bad_cert = (
+            "-----BEGIN CERTIFICATE-----\n"
+            "-----END CERTIFICATE-----\n"
+        )
+        with pytest.raises(ValueError):
+            pybergshamra.sign_enveloped(self._ctx(), self.DOC, cert_pem=bad_cert)

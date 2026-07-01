@@ -569,6 +569,11 @@ pub fn sign(ctx: &DsigContext, template_xml: &str) -> PyResult<String> {
 /// document element's first child, and signs it with the context's key (or HSM
 /// signer). The signing key is the first key in the context's ``KeysManager``.
 ///
+/// ``reference_id`` must be a raw ID value **without** a leading ``#`` (the
+/// ``#`` is added when building the ``Reference`` URI); an empty string or a
+/// ``#``-prefixed value raises ``ValueError``. Pass ``None`` to sign the whole
+/// document (an empty-URI reference).
+///
 /// ``cert_pem`` (one or more PEM ``CERTIFICATE`` blocks) is embedded into
 /// ``X509Data``; when omitted, an empty ``<ds:X509Data/>`` is emitted and the
 /// signer fills it from the signing key's certificate chain if available.
@@ -597,6 +602,17 @@ pub fn sign_enveloped(
     let dig_method = validate_digest_method(digest_method.unwrap_or(algorithm::SHA256))?;
     let c14n = validate_c14n_method(c14n_method.unwrap_or(algorithm::EXC_C14N))?;
     let ref_uri = match reference_id {
+        Some("") => {
+            return Err(pyo3::exceptions::PyValueError::new_err(
+                "reference_id must be a non-empty ID value; pass reference_id=None \
+                 to sign the whole document",
+            ));
+        }
+        Some(id) if id.starts_with('#') => {
+            return Err(pyo3::exceptions::PyValueError::new_err(
+                "reference_id must be a raw ID value without a leading '#'",
+            ));
+        }
         Some(id) => format!("#{}", escape_xml_attr(id)),
         None => String::new(),
     };
@@ -710,7 +726,12 @@ fn pem_certificate_bodies(pem: &str) -> PyResult<Vec<String>> {
             inside = true;
             body.clear();
         } else if t.starts_with("-----END CERTIFICATE-----") {
-            if inside && !body.is_empty() {
+            if inside {
+                if body.is_empty() {
+                    return Err(pyo3::exceptions::PyValueError::new_err(
+                        "cert_pem contains an empty CERTIFICATE block",
+                    ));
+                }
                 base64::engine::general_purpose::STANDARD
                     .decode(&body)
                     .map_err(|e| {
