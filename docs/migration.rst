@@ -195,7 +195,8 @@ Signature verification with ID registration
     manager.add_key(key)
 
     ctx = pybergshamra.DsigContext(manager)
-    ctx.add_id_attr("ID")  # register attribute name globally
+    # "ID" is a default ID attribute name, so no add_id_attr() call is needed
+    # (unlike xmlsec, which requires registering it explicitly).
     result = pybergshamra.verify(ctx, saml_xml)
 
 Signing an XML document

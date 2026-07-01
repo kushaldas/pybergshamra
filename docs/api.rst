@@ -1168,14 +1168,16 @@ DsigContext
 
    .. method:: add_id_attr(name: str) -> None
 
-      Register an additional ID attribute name. Required for SAML and other
-      XML formats that use custom ID attributes (e.g. ``"ID"``).
+      Register an *additional* ID attribute name. The common names — ``Id``,
+      ``ID``, ``id`` and ``AssertionID`` — are already recognized by default
+      (so SAML's ``ID`` works out of the box). Only call this for a *non-default*
+      attribute name; re-registering a default can raise a duplicate-ID error.
 
       .. code-block:: python
 
          ctx = pybergshamra.DsigContext(manager)
-         ctx.add_id_attr("ID")  # needed for SAML
-         result = pybergshamra.verify(ctx, saml_xml)
+         ctx.add_id_attr("MyCustomId")  # a non-default ID attribute
+         result = pybergshamra.verify(ctx, xml)
 
    .. method:: add_url_map(url: str, file_path: str) -> None
 

@@ -528,7 +528,12 @@ class DsigContext:
     @base_dir.setter
     def base_dir(self, value: Optional[str]) -> None: ...
     def add_id_attr(self, name: str) -> None:
-        """Register an additional ID attribute name."""
+        """Register an *additional* ID attribute name.
+
+        The common names ``Id``, ``ID``, ``id`` and ``AssertionID`` are
+        recognized by default. Only call this for a *non-default* attribute
+        name; re-registering a default one can raise a duplicate-ID error.
+        """
         ...
     def add_url_map(self, url: str, file_path: str) -> None:
         """Map a URL to a local file path for external URI resolution."""

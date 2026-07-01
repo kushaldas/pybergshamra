@@ -1513,3 +1513,19 @@ class TestSignEnveloped:
         )
         with pytest.raises(ValueError):
             pybergshamra.sign_enveloped(self._ctx(), self.DOC, cert_pem=bad_cert)
+
+    def test_sign_enveloped_rejects_self_closing_root(self):
+        # A self-closing root cannot host a signature child. Whitespace before
+        # the "/>" must be handled too (uppsala parses the span; we do not scan
+        # for the byte immediately before ">").
+        for doc in ('<root ID="X"/>', '<root ID="X" />'):
+            with pytest.raises(pybergshamra.BergshamraError):
+                pybergshamra.sign_enveloped(self._ctx(), doc, reference_id="X")
+
+    def test_sign_enveloped_empty_root_signs_before_end_tag(self):
+        # An empty (but not self-closing) root gets the signature inserted just
+        # before its end tag, producing valid, verifiable XML.
+        doc = '<root ID="X"></root>'
+        signed = pybergshamra.sign_enveloped(self._ctx(), doc, reference_id="X")
+        assert signed.index("<ds:Signature") < signed.index("</root>")
+        assert pybergshamra.verify(self._verify_ctx(), signed).is_valid

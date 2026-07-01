@@ -738,10 +738,19 @@ fn pem_certificate_bodies(pem: &str) -> PyResult<Vec<String>> {
     Ok(out)
 }
 
-/// Splice ``fragment`` in as the first child of the document's root element by
-/// inserting it immediately after the root element's opening tag. Uses uppsala
-/// (via bergshamra-xml) to locate the root, then scans for the tag-closing
-/// ``>`` while respecting quoted attribute values.
+/// Splice ``fragment`` in as the first child of the document's root element.
+///
+/// Rather than hand-scanning the raw bytes for the end of the root's start tag
+/// (which has to reason about quoted attribute values, whitespace before ``/>``,
+/// etc.), this defers to uppsala (via bergshamra-xml) — whose SIMD-accelerated
+/// parser has already located every node — to pick the exact insertion offset:
+///
+///   * When the root has children, the fragment is inserted immediately before
+///     the first child, using the byte offset uppsala recorded for it, so the
+///     signature becomes the new first child.
+///   * When the root is empty, it is either ``<root></root>`` (insert just
+///     before the end tag) or a self-closing ``<root/>`` / ``<root />`` (which
+///     cannot host a child, so a clear error is returned).
 fn insert_first_child_of_root(xml: &str, fragment: &str) -> PyResult<String> {
     let doc = bergshamra_xml::uppsala::parse(xml)
         .map_err(|e| to_pyerr(bergshamra_core::Error::XmlParse(e.to_string())))?;
@@ -750,49 +759,43 @@ fn insert_first_child_of_root(xml: &str, fragment: &str) -> PyResult<String> {
             "document has no root element to sign".to_string(),
         ))
     })?;
-    let range = doc.node_range(root).ok_or_else(|| {
-        to_pyerr(bergshamra_core::Error::XmlStructure(
-            "could not locate the root element".to_string(),
-        ))
-    })?;
-    let offset = open_tag_end(xml, range.start).ok_or_else(|| {
-        to_pyerr(bergshamra_core::Error::XmlStructure(
-            "cannot envelope-sign a self-closing root element".to_string(),
-        ))
-    })?;
-    let mut out = String::with_capacity(xml.len() + fragment.len());
-    out.push_str(&xml[..offset]);
-    out.push_str(fragment);
-    out.push_str(&xml[offset..]);
-    Ok(out)
-}
 
-/// Return the byte offset just past the ``>`` that closes the start tag
-/// beginning at ``start``. Returns ``None`` for a self-closing (`/>`) tag.
-fn open_tag_end(xml: &str, start: usize) -> Option<usize> {
-    let bytes = xml.as_bytes();
-    let mut i = start;
-    let mut quote: Option<u8> = None;
-    while i < bytes.len() {
-        let c = bytes[i];
-        match quote {
-            Some(q) => {
-                if c == q {
-                    quote = None;
-                }
-            }
-            None => match c {
-                b'"' | b'\'' => quote = Some(c),
-                b'>' => {
-                    if i > start && bytes[i - 1] == b'/' {
-                        return None; // self-closing root
-                    }
-                    return Some(i + 1);
-                }
-                _ => {}
-            },
+    let insert_at = if let Some(first_child) = doc.first_child(root) {
+        // uppsala already tracked the child's exact start offset.
+        doc.node_range(first_child)
+            .ok_or_else(|| {
+                to_pyerr(bergshamra_core::Error::XmlStructure(
+                    "could not locate the root element's first child".to_string(),
+                ))
+            })?
+            .start
+    } else {
+        // Empty root: uppsala's byte span covers the whole element, so we only
+        // need to distinguish `<root/>` (self-closing) from `<root></root>`.
+        let range = doc.node_range(root).ok_or_else(|| {
+            to_pyerr(bergshamra_core::Error::XmlStructure(
+                "could not locate the root element".to_string(),
+            ))
+        })?;
+        let source = &xml[range.clone()];
+        if source.ends_with("/>") {
+            return Err(to_pyerr(bergshamra_core::Error::XmlStructure(
+                "cannot envelope-sign a self-closing root element".to_string(),
+            )));
         }
-        i += 1;
-    }
-    None
+        // With no children the only remaining `<` opens the end tag (XML forbids
+        // a literal `<` in attribute values), so insert right before it.
+        let end_tag = source.rfind('<').ok_or_else(|| {
+            to_pyerr(bergshamra_core::Error::XmlStructure(
+                "could not locate the root element's end tag".to_string(),
+            ))
+        })?;
+        range.start + end_tag
+    };
+
+    let mut out = String::with_capacity(xml.len() + fragment.len());
+    out.push_str(&xml[..insert_at]);
+    out.push_str(fragment);
+    out.push_str(&xml[insert_at..]);
+    Ok(out)
 }

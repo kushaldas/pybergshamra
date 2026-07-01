@@ -4,7 +4,9 @@ Examples
 Verify a SAML Response
 ----------------------
 
-Load an IdP certificate, register the ``ID`` attribute, and verify:
+Load an IdP certificate and verify. The common ID attribute names — ``Id``,
+``ID``, ``id`` and ``AssertionID`` — are recognized by default, so the ``ID``
+attribute SAML uses needs no extra registration:
 
 .. code-block:: python
 
@@ -17,7 +19,6 @@ Load an IdP certificate, register the ``ID`` attribute, and verify:
     manager.add_key(idp_cert)
 
     ctx = pybergshamra.DsigContext(manager)
-    ctx.add_id_attr("ID")  # SAML uses "ID" not "Id"
 
     result = pybergshamra.verify(ctx, saml_xml)
     if result:
@@ -98,7 +99,8 @@ Build a signature template with pyuppsala's ``XmlWriter`` and sign it:
     manager.add_key(key)
 
     ctx = pybergshamra.DsigContext(manager)
-    ctx.add_id_attr("Id")
+    # "Id" is one of the default ID attribute names, so no add_id_attr() call is
+    # needed for the ``Id="doc-1"`` reference above.
     signed_xml = pybergshamra.sign(ctx, template)
     print(signed_xml)
 
