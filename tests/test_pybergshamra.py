@@ -1445,14 +1445,18 @@ class TestSignEnveloped:
     def _ctx(self):
         key = pybergshamra.load_key_file(str(RSA_DIR / "rsa-2048-key.pem"))
         key.name = "signer"
-        mgr = KeysManager(); mgr.add_key(key)
+        mgr = KeysManager()
+        mgr.add_key(key)
         return DsigContext(mgr)
 
     def _verify_ctx(self):
         cert_pem = (RSA_DIR / "rsa-2048-cert.pem").read_bytes()
         cert_key = pybergshamra.load_x509_cert_pem(cert_pem)
-        mgr = KeysManager(); mgr.add_key(cert_key)
-        ctx = DsigContext(mgr); ctx.insecure = True; ctx.skip_time_checks = True
+        mgr = KeysManager()
+        mgr.add_key(cert_key)
+        ctx = DsigContext(mgr)
+        ctx.insecure = True
+        ctx.skip_time_checks = True
         return ctx
 
     def test_sign_enveloped_reference_id_roundtrip(self):
