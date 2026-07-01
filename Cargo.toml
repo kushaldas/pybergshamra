@@ -6,7 +6,7 @@ description = "Python bindings for the Bergshamra XML Security library"
 license = "BSD-2-Clause"
 repository = "https://github.com/kushaldas/pybergshamra"
 homepage = "https://github.com/kushaldas/pybergshamra"
-documentation = "https://pybergshamra.readthedocs.org/"
+documentation = "https://pybergshamra.readthedocs.io/"
 readme = "README.md"
 rust-version = "1.85"
 

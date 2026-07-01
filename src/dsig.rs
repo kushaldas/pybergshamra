@@ -516,7 +516,8 @@ impl DsigContext {
 // Module-level functions
 // ---------------------------------------------------------------------------
 
-/// Verify a signed XML document.
+/// Verify the first `<Signature>` (in document order) of a signed XML document.
+/// Use ``verify_all()`` to check every signature in a multi-signature document.
 ///
 /// Returns a VerifyResult. ``bool(result)`` reports signature validity; callers
 /// that require every reference digest to be checked locally should also inspect

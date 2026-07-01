@@ -586,7 +586,9 @@ class EncContext:
 # Module-level functions — DSig
 
 def verify(ctx: DsigContext, xml: str) -> VerifyResult:
-    """Verify a signed XML document.
+    """Verify the first ``<Signature>`` (in document order) of a signed XML
+    document. Use ``verify_all()`` to check every signature in a
+    multi-signature document.
 
     Returns a VerifyResult. ``bool(result)`` checks signature validity only;
     callers that need full local digest coverage should also require
