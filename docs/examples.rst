@@ -28,6 +28,20 @@ Load an IdP certificate, register the ``ID`` attribute, and verify:
     else:
         print(f"SAML signature invalid: {result.reason}")
 
+.. note::
+
+   :func:`~pybergshamra.verify` checks only the **first** ``<Signature>`` in
+   document order. SAML responses are commonly signed at both the Response and
+   the Assertion level, so to confirm a specific object is covered use
+   :func:`~pybergshamra.verify_all`, which returns one ``VerifyResult`` per
+   signature:
+
+   .. code-block:: python
+
+       results = pybergshamra.verify_all(ctx, saml_xml)
+       if results and all(r.is_valid for r in results):
+           print(f"All {len(results)} SAML signatures valid")
+
 Sign an XML document (enveloped)
 --------------------------------
 

@@ -1207,6 +1207,23 @@ VerifyResult
 
       The node ID of the ``<Signature>`` element, or ``None`` if invalid.
 
+   .. attribute:: has_unverified_references
+      :type: bool
+
+      ``True`` if the signature is valid but at least one ``<Reference>``
+      digest was **not** computed and verified locally (for example a
+      ``cid:`` WS-Security MIME attachment). Such references must be verified
+      out of band before the signature can be trusted. Always ``False`` for an
+      invalid result.
+
+   .. attribute:: all_reference_digests_verified
+      :type: bool
+
+      ``True`` only if the signature is valid, has at least one
+      ``<Reference>``, and **every** reference digest was computed and verified
+      locally. ``False`` for an invalid result and for a valid result with no
+      references (which provides no local digest coverage).
+
    .. code-block:: python
 
       result = pybergshamra.verify(ctx, xml)
@@ -1234,6 +1251,14 @@ VerifiedReference
       :type: int | None
 
       The resolved target node ID (if a same-document reference).
+
+   .. attribute:: digest_verified
+      :type: bool
+
+      Whether this reference's digest was cryptographically verified.
+      ``False`` for references the engine could not check itself (e.g.
+      ``cid:`` MIME attachments in WS-Security); the caller must verify those
+      out of band before trusting the signature.
 
 VerifiedKeyInfo
 ^^^^^^^^^^^^^^^
@@ -1274,6 +1299,28 @@ verify and sign
       result = pybergshamra.verify(ctx, xml)
       if result:
           print("Signature valid")
+
+.. function:: verify_all(ctx: DsigContext, xml: str) -> list[VerifyResult]
+
+   Verify **every** ``<Signature>`` element in the document, returning one
+   :class:`VerifyResult` per signature in document order.
+
+   Unlike :func:`verify` (which reports only the first signature), each
+   signature is verified independently and a per-signature failure becomes an
+   invalid entry rather than aborting the call, so the returned list may mix
+   valid and invalid results. Use this for multi-signature documents such as
+   SAML responses signed at both the Response and Assertion levels.
+
+   :param ctx: A configured :class:`DsigContext`.
+   :param xml: The signed XML string.
+   :raises XmlError: For document-level failures (parse error, duplicate-ID
+      conflict, or no ``<Signature>`` element at all).
+
+   .. code-block:: python
+
+      results = pybergshamra.verify_all(ctx, saml_xml)
+      if all(r.is_valid for r in results):
+          print(f"All {len(results)} signatures valid")
 
 .. function:: sign(ctx: DsigContext, template_xml: str) -> str
 
