@@ -56,9 +56,13 @@ Verify a signed XML document
     ctx = pybergshamra.DsigContext(manager)
     result = pybergshamra.verify(ctx, xml)
 
-    if result:
+    # ``all_reference_digests_verified`` guards against trusting a document
+    # whose references were not all digest-verified locally.
+    if result and result.all_reference_digests_verified:
         print("Signature is valid")
         print("Algorithm:", result.key_info.algorithm)
+    elif result:
+        print("Valid signature, but a reference needs out-of-band checking")
     else:
         print("Invalid:", result.reason)
 

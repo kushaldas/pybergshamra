@@ -1314,7 +1314,9 @@ verify and sign
    .. code-block:: python
 
       result = pybergshamra.verify(ctx, xml)
-      if result:
+      # ``bool(result)`` confirms the signature math; also require
+      # ``all_reference_digests_verified`` before trusting the document.
+      if result and result.all_reference_digests_verified:
           print("Signature valid")
 
 .. function:: verify_all(ctx: DsigContext, xml: str) -> list[VerifyResult]

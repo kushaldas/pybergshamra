@@ -21,11 +21,16 @@ attribute SAML uses needs no extra registration:
     ctx = pybergshamra.DsigContext(manager)
 
     result = pybergshamra.verify(ctx, saml_xml)
-    if result:
+    # A truthy result means the signature math checked out; also require
+    # ``all_reference_digests_verified`` so references that were not
+    # digest-verified locally (e.g. external ones) cannot be trusted blindly.
+    if result and result.all_reference_digests_verified:
         print("SAML signature valid")
         print(f"  Algorithm: {result.key_info.algorithm}")
         for ref in result.references:
             print(f"  Reference: {ref.uri}")
+    elif result:
+        print("SAML signature valid, but a reference needs out-of-band checking")
     else:
         print(f"SAML signature invalid: {result.reason}")
 
