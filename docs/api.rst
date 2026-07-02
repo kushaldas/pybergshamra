@@ -1194,8 +1194,10 @@ VerifyResult
 
    Result of signature verification. ``bool(result)`` checks signature validity
    only. Applications that require every ``<Reference>`` digest to be checked
-   locally should also require :attr:`all_reference_digests_verified` or reject
-   :attr:`has_unverified_references`.
+   locally should also require :attr:`all_reference_digests_verified` — it is
+   the definitive coverage check. :attr:`has_unverified_references` is only an
+   additional signal: it is also ``False`` when there are zero ``<Reference>``
+   elements, which still means no local digest coverage.
 
    .. attribute:: is_valid
       :type: bool
@@ -1307,12 +1309,17 @@ verify and sign
    Verify a signed XML document. Returns a :class:`VerifyResult` -- use
    ``bool(result)`` to check validity.
 
+   Only the **first** ``<Signature>`` in document order is verified; use
+   :func:`verify_all` for multi-signature documents.
+
    :param ctx: A configured :class:`DsigContext`.
    :param xml: The signed XML string.
    :raises XmlError: If the XML cannot be parsed.
 
    .. code-block:: python
 
+      # Checks only the first <Signature>; see verify_all() for documents
+      # signed in more than one place.
       result = pybergshamra.verify(ctx, xml)
       # ``bool(result)`` confirms the signature math; also require
       # ``all_reference_digests_verified`` before trusting the document.

@@ -133,7 +133,10 @@ impl From<&RustVerifiedKeyInfo> for VerifiedKeyInfo {
 ///
 /// Use ``bool(result)`` to check signature validity. If your application needs
 /// every reference digest computed locally, also require
-/// ``all_reference_digests_verified`` or reject ``has_unverified_references``.
+/// ``all_reference_digests_verified`` — it is the definitive coverage check.
+/// ``has_unverified_references`` is only an additional signal: it is also
+/// ``False`` when there are zero ``<Reference>`` elements, which still means
+/// no local digest coverage.
 #[pyclass(name = "VerifyResult", skip_from_py_object)]
 #[derive(Clone)]
 pub struct VerifyResult {
@@ -724,6 +727,12 @@ fn pem_certificate_bodies(pem: &str) -> PyResult<Vec<String>> {
     for line in pem.lines() {
         let t = line.trim();
         if t.starts_with("-----BEGIN CERTIFICATE-----") {
+            if inside {
+                return Err(pyo3::exceptions::PyValueError::new_err(
+                    "cert_pem contains a nested BEGIN CERTIFICATE inside an \
+                     unterminated CERTIFICATE block",
+                ));
+            }
             inside = true;
             body.clear();
         } else if t.starts_with("-----END CERTIFICATE-----") {

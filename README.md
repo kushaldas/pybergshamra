@@ -183,6 +183,7 @@ each taking an allow-list of permitted algorithm URIs. The HSM operation classes
 | `verify(ctx, xml)` | Verify the first `<Signature>` in an XML document |
 | `verify_all(ctx, xml)` | Verify every `<Signature>` (e.g. multi-signature SAML) |
 | `sign(ctx, template)` | Sign an XML template |
+| `sign_enveloped(ctx, xml, ...)` | Build and sign an enveloped `<Signature>` in one step |
 | `encrypt(ctx, template, data)` | Encrypt data with an XML template |
 | `decrypt(ctx, xml)` | Decrypt an XML document |
 | `canonicalize(xml, mode)` | Canonicalize an XML document |

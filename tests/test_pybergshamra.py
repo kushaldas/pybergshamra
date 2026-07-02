@@ -1552,3 +1552,14 @@ class TestSignEnveloped:
         )
         with pytest.raises(ValueError):
             pybergshamra.sign_enveloped(self._ctx(), self.DOC, cert_pem=bad_cert)
+
+    def test_sign_enveloped_rejects_nested_certificate_block(self):
+        bad_cert = (
+            "-----BEGIN CERTIFICATE-----\n"
+            "AAAA\n"
+            "-----BEGIN CERTIFICATE-----\n"
+            "AAAA\n"
+            "-----END CERTIFICATE-----\n"
+        )
+        with pytest.raises(ValueError):
+            pybergshamra.sign_enveloped(self._ctx(), self.DOC, cert_pem=bad_cert)

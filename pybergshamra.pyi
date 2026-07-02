@@ -385,7 +385,10 @@ class VerifyResult:
 
     Use ``bool(result)`` to check signature validity. If your application
     requires every reference digest to be computed locally, also require
-    ``all_reference_digests_verified`` or reject ``has_unverified_references``.
+    ``all_reference_digests_verified`` -- it is the definitive coverage check.
+    ``has_unverified_references`` is only an additional signal: it is also
+    ``False`` when there are zero ``<Reference>`` elements, which still means
+    no local digest coverage.
     """
 
     @property
