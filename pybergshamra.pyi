@@ -383,7 +383,12 @@ class VerifiedKeyInfo:
 class VerifyResult:
     """Result of signature verification.
 
-    Use ``bool(result)`` to check validity, or inspect properties.
+    Use ``bool(result)`` to check signature validity. If your application
+    requires every reference digest to be computed locally, also require
+    ``all_reference_digests_verified`` -- it is the definitive coverage check.
+    ``has_unverified_references`` is only an additional signal: it is also
+    ``False`` when there are zero ``<Reference>`` elements, which still means
+    no local digest coverage.
     """
 
     @property
@@ -406,6 +411,20 @@ class VerifyResult:
     def signature_node_id(self) -> Optional[int]:
         """The node ID of the <Signature> element, or None if invalid."""
         ...
+    @property
+    def has_unverified_references(self) -> bool:
+        """True if valid but at least one <Reference> digest was not computed
+        and verified locally (e.g. a ``cid:`` WS-Security MIME attachment).
+        Such references must be verified out of band. Always False if invalid.
+        """
+        ...
+    @property
+    def all_reference_digests_verified(self) -> bool:
+        """True only if valid, with at least one <Reference>, and every
+        reference digest was computed and verified locally. False for an
+        invalid result or a valid result with no references.
+        """
+        ...
     def __bool__(self) -> bool: ...
     def __repr__(self) -> str: ...
 
@@ -416,7 +435,22 @@ class DsigContext:
     then call ``verify()`` or ``sign()``.
     """
 
-    def __init__(self, keys_manager: KeysManager) -> None: ...
+    def __init__(
+        self,
+        keys_manager: KeysManager,
+        *,
+        secure_defaults: bool = True,
+        trusted_keys_only: Optional[bool] = None,
+        strict_verification: Optional[bool] = None,
+        hmac_min_out_len: Optional[int] = None,
+    ) -> None:
+        """Create a DSig context.
+
+        Secure defaults are enabled unless ``secure_defaults=False`` is passed
+        as a keyword argument. Individual secure defaults can also be overridden
+        with keyword-only arguments.
+        """
+        ...
     @staticmethod
     def secure(keys_manager: KeysManager) -> DsigContext:
         """Secure-by-default context (mirrors Rust ``DsigContext::new()``):
@@ -426,8 +460,9 @@ class DsigContext:
     @staticmethod
     def permissive(keys_manager: KeysManager) -> DsigContext:
         """Permissive context (mirrors Rust ``DsigContext::new_permissive()``):
-        standard W3C behaviour with inline ``KeyInfo`` extraction. Same as the
-        default ``DsigContext(manager)`` constructor."""
+        standard W3C behaviour with inline ``KeyInfo`` extraction. Prefer
+        ``DsigContext(manager, secure_defaults=False)`` for new code so the
+        opt-out is explicit at construction."""
         ...
     def set_hsm_signer(self, signer: Pkcs11Signer) -> None:
         """Use an HSM-backed (PKCS#11) signer for signing."""
@@ -496,7 +531,12 @@ class DsigContext:
     @base_dir.setter
     def base_dir(self, value: Optional[str]) -> None: ...
     def add_id_attr(self, name: str) -> None:
-        """Register an additional ID attribute name."""
+        """Register an *additional* ID attribute name.
+
+        The common names ``Id``, ``ID``, ``id`` and ``AssertionID`` are
+        recognized by default. Only call this for a *non-default* attribute
+        name; re-registering a default one can raise a duplicate-ID error.
+        """
         ...
     def add_url_map(self, url: str, file_path: str) -> None:
         """Map a URL to a local file path for external URI resolution."""
@@ -549,9 +589,28 @@ class EncContext:
 # Module-level functions — DSig
 
 def verify(ctx: DsigContext, xml: str) -> VerifyResult:
-    """Verify a signed XML document.
+    """Verify the first ``<Signature>`` (in document order) of a signed XML
+    document. Use ``verify_all()`` to check every signature in a
+    multi-signature document.
 
-    Returns a VerifyResult (use ``bool(result)`` to check validity).
+    Returns a VerifyResult. ``bool(result)`` checks signature validity only;
+    callers that need full local digest coverage should also require
+    ``result.all_reference_digests_verified``.
+    """
+    ...
+
+def verify_all(ctx: DsigContext, xml: str) -> list[VerifyResult]:
+    """Verify every <Signature> element in the document.
+
+    Returns one VerifyResult per signature in document order. Unlike
+    ``verify()`` (which reports only the first signature), each signature is
+    verified independently and a per-signature failure becomes an invalid entry
+    rather than aborting the call, so the list may mix valid and invalid
+    results. Use this for multi-signature documents such as SAML responses
+    signed at both the Response and Assertion levels.
+
+    Raises only for document-level failures (parse error, duplicate-ID
+    conflict, or no ``<Signature>`` element at all).
     """
     ...
 
@@ -560,6 +619,37 @@ def sign(ctx: DsigContext, template_xml: str) -> str:
 
     The template must contain a ``<Signature>`` skeleton with
     ``<SignedInfo>``, ``<Reference>``, etc.
+    """
+    ...
+
+def sign_enveloped(
+    ctx: DsigContext,
+    xml: str,
+    *,
+    reference_id: Optional[str] = None,
+    signature_method: Optional[str] = None,
+    digest_method: Optional[str] = None,
+    c14n_method: Optional[str] = None,
+    cert_pem: Optional[str] = None,
+) -> str:
+    """Build an enveloped ``<ds:Signature>`` and sign ``xml`` in one step.
+
+    Constructs a standard enveloped-signature template (SignedInfo with the
+    given canonicalization/signature methods; a single Reference to
+    ``#{reference_id}`` -- or the whole document when ``reference_id`` is None --
+    with enveloped-signature + exclusive-c14n transforms; KeyInfo/X509Data),
+    inserts it as the document element's first child, and signs it with the
+    context's first key (or HSM signer). Defaults: RSA-SHA256 / SHA-256 /
+    exclusive-c14n.
+
+    ``reference_id`` must be a raw ID value **without** a leading ``#``; an
+    empty string or a ``#``-prefixed value raises ``ValueError``. Pass ``None``
+    to sign the whole document.
+
+    ``cert_pem`` (one or more PEM CERTIFICATE blocks) is embedded into
+    ``X509Data``. Note that ``"ID"`` is already treated as a default ID
+    attribute, so do **not** also call :meth:`DsigContext.add_id_attr` with
+    ``"ID"`` -- doing so double-registers it and raises a duplicate-ID error.
     """
     ...
 

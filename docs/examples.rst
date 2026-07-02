@@ -4,7 +4,9 @@ Examples
 Verify a SAML Response
 ----------------------
 
-Load an IdP certificate, register the ``ID`` attribute, and verify:
+Load an IdP certificate and verify. The common ID attribute names — ``Id``,
+``ID``, ``id`` and ``AssertionID`` — are recognized by default, so the ``ID``
+attribute SAML uses needs no extra registration:
 
 .. code-block:: python
 
@@ -17,16 +19,34 @@ Load an IdP certificate, register the ``ID`` attribute, and verify:
     manager.add_key(idp_cert)
 
     ctx = pybergshamra.DsigContext(manager)
-    ctx.add_id_attr("ID")  # SAML uses "ID" not "Id"
 
     result = pybergshamra.verify(ctx, saml_xml)
-    if result:
+    # A truthy result means the signature math checked out; also require
+    # ``all_reference_digests_verified`` so references that were not
+    # digest-verified locally (e.g. external ones) cannot be trusted blindly.
+    if result and result.all_reference_digests_verified:
         print("SAML signature valid")
         print(f"  Algorithm: {result.key_info.algorithm}")
         for ref in result.references:
             print(f"  Reference: {ref.uri}")
+    elif result:
+        print("SAML signature valid, but a reference needs out-of-band checking")
     else:
         print(f"SAML signature invalid: {result.reason}")
+
+.. note::
+
+   :func:`~pybergshamra.verify` checks only the **first** ``<Signature>`` in
+   document order. SAML responses are commonly signed at both the Response and
+   the Assertion level, so to confirm a specific object is covered use
+   :func:`~pybergshamra.verify_all`, which returns one ``VerifyResult`` per
+   signature:
+
+   .. code-block:: python
+
+       results = pybergshamra.verify_all(ctx, saml_xml)
+       if results and all(r.is_valid for r in results):
+           print(f"All {len(results)} SAML signatures valid")
 
 Sign an XML document (enveloped)
 --------------------------------
@@ -84,7 +104,8 @@ Build a signature template with pyuppsala's ``XmlWriter`` and sign it:
     manager.add_key(key)
 
     ctx = pybergshamra.DsigContext(manager)
-    ctx.add_id_attr("Id")
+    # "Id" is one of the default ID attribute names, so no add_id_attr() call is
+    # needed for the ``Id="doc-1"`` reference above.
     signed_xml = pybergshamra.sign(ctx, template)
     print(signed_xml)
 

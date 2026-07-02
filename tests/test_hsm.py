@@ -163,7 +163,7 @@ class TestXmlDsig:
         signed_xml = pybergshamra.sign(sign_ctx, self._template())
         assert "SignatureValue" in signed_xml
 
-        verify_ctx = pybergshamra.DsigContext(km)
+        verify_ctx = pybergshamra.DsigContext(km, secure_defaults=False)
         verify_ctx.set_hsm_verifier(
             pybergshamra.Pkcs11Verifier(session, "test-rsa-key", Algorithm.RSA_SHA256)
         )
@@ -179,7 +179,7 @@ class TestXmlDsig:
         signed_xml = pybergshamra.sign(sign_ctx, self._template())
         tampered = signed_xml.replace("some text", "evil text")
 
-        verify_ctx = pybergshamra.DsigContext(km)
+        verify_ctx = pybergshamra.DsigContext(km, secure_defaults=False)
         verify_ctx.set_hsm_verifier(
             pybergshamra.Pkcs11Verifier(session, "test-rsa-key", Algorithm.RSA_SHA256)
         )

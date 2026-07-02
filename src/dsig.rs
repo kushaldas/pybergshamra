@@ -131,7 +131,12 @@ impl From<&RustVerifiedKeyInfo> for VerifiedKeyInfo {
 
 /// Result of signature verification.
 ///
-/// Use ``bool(result)`` to check validity, or inspect properties.
+/// Use ``bool(result)`` to check signature validity. If your application needs
+/// every reference digest computed locally, also require
+/// ``all_reference_digests_verified`` — it is the definitive coverage check.
+/// ``has_unverified_references`` is only an additional signal: it is also
+/// ``False`` when there are zero ``<Reference>`` elements, which still means
+/// no local digest coverage.
 #[pyclass(name = "VerifyResult", skip_from_py_object)]
 #[derive(Clone)]
 pub struct VerifyResult {
@@ -172,6 +177,32 @@ impl VerifyResult {
     #[getter]
     fn signature_node_id(&self) -> Option<usize> {
         self.signature_node_id_val
+    }
+
+    /// Whether the signature is valid but at least one `<Reference>` digest was
+    /// **not** computed and verified locally (e.g. a `cid:` WS-Security MIME
+    /// attachment). Such references must be verified out of band before the
+    /// signature can be trusted. Always ``False`` for an invalid result.
+    #[getter]
+    fn has_unverified_references(&self) -> bool {
+        self.valid
+            && self
+                .references_data
+                .as_ref()
+                .is_some_and(|refs| refs.iter().any(|r| !r.digest_verified))
+    }
+
+    /// Whether the signature is valid, has at least one `<Reference>`, and
+    /// **every** reference digest was computed and verified locally. Returns
+    /// ``False`` for an invalid result and for a valid result with no
+    /// references (which provides no local digest coverage).
+    #[getter]
+    fn all_reference_digests_verified(&self) -> bool {
+        self.valid
+            && self
+                .references_data
+                .as_ref()
+                .is_some_and(|refs| !refs.is_empty() && refs.iter().all(|r| r.digest_verified))
     }
 
     fn __bool__(&self) -> bool {
@@ -252,6 +283,37 @@ pub struct DsigContext {
 }
 
 impl DsigContext {
+    fn from_security_defaults(
+        keys_manager: &KeysManager,
+        secure_defaults: bool,
+        trusted_keys_only: Option<bool>,
+        strict_verification: Option<bool>,
+        hmac_min_out_len: Option<usize>,
+    ) -> Self {
+        let default_trusted_keys_only = secure_defaults;
+        let default_strict_verification = secure_defaults;
+        let default_hmac_min_out_len = if secure_defaults { 160 } else { 0 };
+
+        DsigContext {
+            keys_manager: keys_manager.clone(),
+            id_attrs: Vec::new(),
+            url_maps: Vec::new(),
+            hmac_min_out_len: hmac_min_out_len.unwrap_or(default_hmac_min_out_len),
+            debug: false,
+            base_dir: None,
+            insecure: false,
+            verify_keys: false,
+            verification_time: None,
+            skip_time_checks: false,
+            enabled_key_data_x509: false,
+            trusted_keys_only: trusted_keys_only.unwrap_or(default_trusted_keys_only),
+            strict_verification: strict_verification.unwrap_or(default_strict_verification),
+            base_secure: secure_defaults,
+            hsm_signer: None,
+            hsm_verifier: None,
+        }
+    }
+
     /// Build the Rust DsigContext from Python-side state.
     fn to_rust(&self) -> PyResult<RustDsigContext> {
         let mgr_guard = self
@@ -296,25 +358,21 @@ impl DsigContext {
 #[pymethods]
 impl DsigContext {
     #[new]
-    fn new(keys_manager: &KeysManager) -> Self {
-        DsigContext {
-            keys_manager: keys_manager.clone(),
-            id_attrs: Vec::new(),
-            url_maps: Vec::new(),
-            hmac_min_out_len: 0,
-            debug: false,
-            base_dir: None,
-            insecure: false,
-            verify_keys: false,
-            verification_time: None,
-            skip_time_checks: false,
-            enabled_key_data_x509: false,
-            trusted_keys_only: false,
-            strict_verification: false,
-            base_secure: false,
-            hsm_signer: None,
-            hsm_verifier: None,
-        }
+    #[pyo3(signature = (keys_manager, *, secure_defaults=true, trusted_keys_only=None, strict_verification=None, hmac_min_out_len=None))]
+    fn new(
+        keys_manager: &KeysManager,
+        secure_defaults: bool,
+        trusted_keys_only: Option<bool>,
+        strict_verification: Option<bool>,
+        hmac_min_out_len: Option<usize>,
+    ) -> Self {
+        DsigContext::from_security_defaults(
+            keys_manager,
+            secure_defaults,
+            trusted_keys_only,
+            strict_verification,
+            hmac_min_out_len,
+        )
     }
 
     /// Build a secure-by-default context, equivalent to Rust
@@ -324,20 +382,16 @@ impl DsigContext {
     /// ``RustDsigContext::new()``). Recommended for federated-identity / SAML.
     #[staticmethod]
     fn secure(keys_manager: &KeysManager) -> Self {
-        let mut ctx = DsigContext::new(keys_manager);
-        ctx.base_secure = true;
-        ctx.trusted_keys_only = true;
-        ctx.strict_verification = true;
-        ctx.hmac_min_out_len = 160;
-        ctx
+        DsigContext::from_security_defaults(keys_manager, true, None, None, None)
     }
 
     /// Build a permissive context (mirrors Rust ``DsigContext::new_permissive()``):
-    /// standard W3C behaviour with inline ``KeyInfo`` extraction enabled. This is
-    /// the same configuration as the default ``DsigContext(manager)`` constructor.
+    /// standard W3C behaviour with inline ``KeyInfo`` extraction enabled.
+    /// Prefer ``DsigContext(manager, secure_defaults=False)`` when constructing
+    /// permissive contexts from Python code so the opt-out is explicit.
     #[staticmethod]
     fn permissive(keys_manager: &KeysManager) -> Self {
-        DsigContext::new(keys_manager)
+        DsigContext::from_security_defaults(keys_manager, false, None, None, None)
     }
 
     /// Use an HSM-backed signer (PKCS#11) for the signing operation.
@@ -465,14 +519,37 @@ impl DsigContext {
 // Module-level functions
 // ---------------------------------------------------------------------------
 
-/// Verify a signed XML document.
+/// Verify the first `<Signature>` (in document order) of a signed XML document.
+/// Use ``verify_all()`` to check every signature in a multi-signature document.
 ///
-/// Returns a VerifyResult (use ``bool(result)`` to check validity).
+/// Returns a VerifyResult. ``bool(result)`` reports signature validity; callers
+/// that require every reference digest to be checked locally should also inspect
+/// ``all_reference_digests_verified`` / ``has_unverified_references``.
 #[pyfunction]
 pub fn verify(ctx: &DsigContext, xml: &str) -> PyResult<VerifyResult> {
     let rust_ctx = ctx.to_rust()?;
     let result = bergshamra_dsig::verify::verify(&rust_ctx, xml).map_err(to_pyerr)?;
     Ok(VerifyResult::from(result))
+}
+
+/// Verify **every** `<Signature>` element in the document, returning one
+/// VerifyResult per signature in document order.
+///
+/// Enveloped SAML responses are commonly signed in more than one place (the
+/// Response element and each Assertion). ``verify()`` reports only the first
+/// signature, so a caller that must confirm a particular object is covered
+/// could otherwise miss a valid signature that is not first in document order.
+/// Each signature is verified independently; a per-signature failure is
+/// reported as an invalid entry rather than aborting the whole call, so the
+/// returned list may mix valid and invalid results.
+///
+/// Raises an error only for document-level failures (parse error, duplicate-ID
+/// conflict, or no `<Signature>` element at all).
+#[pyfunction]
+pub fn verify_all(ctx: &DsigContext, xml: &str) -> PyResult<Vec<VerifyResult>> {
+    let rust_ctx = ctx.to_rust()?;
+    let results = bergshamra_dsig::verify::verify_all(&rust_ctx, xml).map_err(to_pyerr)?;
+    Ok(results.into_iter().map(VerifyResult::from).collect())
 }
 
 /// Sign an XML template and return the signed XML string.
@@ -483,4 +560,273 @@ pub fn verify(ctx: &DsigContext, xml: &str) -> PyResult<VerifyResult> {
 pub fn sign(ctx: &DsigContext, template_xml: &str) -> PyResult<String> {
     let rust_ctx = ctx.to_rust()?;
     bergshamra_dsig::sign::sign(&rust_ctx, template_xml).map_err(to_pyerr)
+}
+
+/// Build an enveloped `<ds:Signature>` and sign ``xml`` in one step.
+///
+/// This is the high-level entry point for the common case (e.g. signing SAML
+/// metadata): it constructs a standard enveloped-signature template
+/// (``SignedInfo`` with the given canonicalization and signature methods; a
+/// single ``Reference`` to ``#{reference_id}`` — or the whole document when
+/// ``reference_id`` is ``None`` — carrying the enveloped-signature and
+/// exclusive-c14n transforms; ``KeyInfo``/``X509Data``), inserts it as the
+/// document element's first child, and signs it with the context's key (or HSM
+/// signer). The signing key is the first key in the context's ``KeysManager``.
+///
+/// ``reference_id`` must be a raw ID value **without** a leading ``#`` (the
+/// ``#`` is added when building the ``Reference`` URI); an empty string or a
+/// ``#``-prefixed value raises ``ValueError``. Pass ``None`` to sign the whole
+/// document (an empty-URI reference).
+///
+/// ``cert_pem`` (one or more PEM ``CERTIFICATE`` blocks) is embedded into
+/// ``X509Data``; when omitted, an empty ``<ds:X509Data/>`` is emitted and the
+/// signer fills it from the signing key's certificate chain if available.
+///
+/// The common ID attribute names — ``Id``, ``ID``, ``id`` and ``AssertionID``
+/// — are recognized by default, so a ``reference_id`` carried by one of those
+/// attributes (such as the ``ID`` on SAML metadata) resolves with no extra
+/// configuration. Do **not** call :meth:`DsigContext.add_id_attr` with one of
+/// these names — double-registering a default raises a duplicate-ID error. Use
+/// :meth:`DsigContext.add_id_attr` only for a *non-default* ID attribute name.
+#[pyfunction]
+#[pyo3(signature = (ctx, xml, *, reference_id=None, signature_method=None, digest_method=None, c14n_method=None, cert_pem=None))]
+#[allow(clippy::too_many_arguments)]
+pub fn sign_enveloped(
+    ctx: &DsigContext,
+    xml: &str,
+    reference_id: Option<&str>,
+    signature_method: Option<&str>,
+    digest_method: Option<&str>,
+    c14n_method: Option<&str>,
+    cert_pem: Option<&str>,
+) -> PyResult<String> {
+    use bergshamra_core::algorithm;
+
+    let sig_method = validate_signature_method(signature_method.unwrap_or(algorithm::RSA_SHA256))?;
+    let dig_method = validate_digest_method(digest_method.unwrap_or(algorithm::SHA256))?;
+    let c14n = validate_c14n_method(c14n_method.unwrap_or(algorithm::EXC_C14N))?;
+    let ref_uri = match reference_id {
+        Some("") => {
+            return Err(pyo3::exceptions::PyValueError::new_err(
+                "reference_id must be a non-empty ID value; pass reference_id=None \
+                 to sign the whole document",
+            ));
+        }
+        Some(id) if id.starts_with('#') => {
+            return Err(pyo3::exceptions::PyValueError::new_err(
+                "reference_id must be a raw ID value without a leading '#'",
+            ));
+        }
+        Some(id) => format!("#{}", escape_xml_attr(id)),
+        None => String::new(),
+    };
+
+    let key_info = build_key_info(cert_pem)?;
+    let signature = format!(
+        "<ds:Signature xmlns:ds=\"http://www.w3.org/2000/09/xmldsig#\">\
+<ds:SignedInfo>\
+<ds:CanonicalizationMethod Algorithm=\"{c14n}\"/>\
+<ds:SignatureMethod Algorithm=\"{sig_method}\"/>\
+<ds:Reference URI=\"{ref_uri}\">\
+<ds:Transforms>\
+<ds:Transform Algorithm=\"{enveloped}\"/>\
+<ds:Transform Algorithm=\"{c14n}\"/>\
+</ds:Transforms>\
+<ds:DigestMethod Algorithm=\"{dig_method}\"/>\
+<ds:DigestValue></ds:DigestValue>\
+</ds:Reference>\
+</ds:SignedInfo>\
+<ds:SignatureValue></ds:SignatureValue>\
+{key_info}\
+</ds:Signature>",
+        enveloped = algorithm::ENVELOPED_SIGNATURE,
+    );
+
+    let template = insert_first_child_of_root(xml, &signature)?;
+    let rust_ctx = ctx.to_rust()?;
+    bergshamra_dsig::sign::sign(&rust_ctx, &template).map_err(to_pyerr)
+}
+
+fn validate_signature_method(uri: &str) -> PyResult<&str> {
+    bergshamra_crypto::sign::from_uri(uri).map_err(to_pyerr)?;
+    Ok(uri)
+}
+
+fn validate_digest_method(uri: &str) -> PyResult<&str> {
+    bergshamra_crypto::digest::from_uri(uri).map_err(to_pyerr)?;
+    Ok(uri)
+}
+
+fn validate_c14n_method(uri: &str) -> PyResult<&str> {
+    if bergshamra_c14n::C14nMode::from_uri(uri).is_some() {
+        Ok(uri)
+    } else {
+        Err(to_pyerr(bergshamra_core::Error::UnsupportedAlgorithm(
+            format!("canonicalization algorithm: {uri}"),
+        )))
+    }
+}
+
+fn escape_xml_attr(value: &str) -> String {
+    let mut out = String::with_capacity(value.len());
+    for ch in value.chars() {
+        match ch {
+            '&' => out.push_str("&amp;"),
+            '"' => out.push_str("&quot;"),
+            '\'' => out.push_str("&apos;"),
+            '<' => out.push_str("&lt;"),
+            '>' => out.push_str("&gt;"),
+            _ => out.push(ch),
+        }
+    }
+    out
+}
+
+/// Build the `<ds:KeyInfo>` fragment, embedding any PEM certificates found in
+/// ``cert_pem`` as `<ds:X509Certificate>` elements. With no certificate an
+/// empty `<ds:X509Data/>` is emitted for the signer to populate.
+fn build_key_info(cert_pem: Option<&str>) -> PyResult<String> {
+    let certs: Vec<String> = match cert_pem {
+        Some(pem) => {
+            let certs = pem_certificate_bodies(pem)?;
+            if certs.is_empty() && !pem.trim().is_empty() {
+                return Err(pyo3::exceptions::PyValueError::new_err(
+                    "cert_pem does not contain a CERTIFICATE block",
+                ));
+            }
+            certs
+        }
+        None => Vec::new(),
+    };
+    if certs.is_empty() {
+        return Ok("<ds:KeyInfo><ds:X509Data/></ds:KeyInfo>".to_string());
+    }
+    let mut x509 = String::from("<ds:KeyInfo><ds:X509Data>");
+    for body in certs {
+        x509.push_str("<ds:X509Certificate>");
+        x509.push_str(&body);
+        x509.push_str("</ds:X509Certificate>");
+    }
+    x509.push_str("</ds:X509Data></ds:KeyInfo>");
+    Ok(x509)
+}
+
+/// Extract the base64 body of each PEM ``CERTIFICATE`` block (whitespace
+/// stripped), so it can be placed inside an `<ds:X509Certificate>` element.
+///
+/// Each body is validated by **actually base64-decoding it** with the standard
+/// engine, so malformed data — stray characters, bad padding, or a non-multiple
+/// of-4 length — is rejected with a clear `ValueError` rather than being
+/// embedded verbatim and failing in a less obvious way downstream.
+fn pem_certificate_bodies(pem: &str) -> PyResult<Vec<String>> {
+    use base64::Engine;
+
+    let mut out = Vec::new();
+    let mut body = String::new();
+    let mut inside = false;
+    for line in pem.lines() {
+        let t = line.trim();
+        if t.starts_with("-----BEGIN CERTIFICATE-----") {
+            if inside {
+                return Err(pyo3::exceptions::PyValueError::new_err(
+                    "cert_pem contains a nested BEGIN CERTIFICATE inside an \
+                     unterminated CERTIFICATE block",
+                ));
+            }
+            inside = true;
+            body.clear();
+        } else if t.starts_with("-----END CERTIFICATE-----") {
+            if inside {
+                if body.is_empty() {
+                    return Err(pyo3::exceptions::PyValueError::new_err(
+                        "cert_pem contains an empty CERTIFICATE block",
+                    ));
+                }
+                base64::engine::general_purpose::STANDARD
+                    .decode(&body)
+                    .map_err(|e| {
+                        pyo3::exceptions::PyValueError::new_err(format!(
+                            "cert_pem contains invalid base64 certificate data: {e}"
+                        ))
+                    })?;
+                out.push(std::mem::take(&mut body));
+            }
+            inside = false;
+        } else if inside {
+            for ch in t.chars() {
+                if ch.is_whitespace() {
+                    continue;
+                }
+                body.push(ch);
+            }
+        }
+    }
+    if inside {
+        return Err(pyo3::exceptions::PyValueError::new_err(
+            "cert_pem contains an unterminated CERTIFICATE block",
+        ));
+    }
+    Ok(out)
+}
+
+/// Splice ``fragment`` in as the first child of the document's root element.
+///
+/// Rather than hand-scanning the raw bytes for the end of the root's start tag
+/// (which has to reason about quoted attribute values, whitespace before ``/>``,
+/// etc.), this defers to uppsala (via bergshamra-xml) — whose SIMD-accelerated
+/// parser has already located every node — to pick the exact insertion offset:
+///
+///   * When the root has children, the fragment is inserted immediately before
+///     the first child, using the byte offset uppsala recorded for it, so the
+///     signature becomes the new first child.
+///   * When the root is empty, it is either ``<root></root>`` (insert just
+///     before the end tag) or a self-closing ``<root/>`` / ``<root />`` (which
+///     cannot host a child, so a clear error is returned).
+fn insert_first_child_of_root(xml: &str, fragment: &str) -> PyResult<String> {
+    let doc = bergshamra_xml::uppsala::parse(xml)
+        .map_err(|e| to_pyerr(bergshamra_core::Error::XmlParse(e.to_string())))?;
+    let root = doc.document_element().ok_or_else(|| {
+        to_pyerr(bergshamra_core::Error::XmlStructure(
+            "document has no root element to sign".to_string(),
+        ))
+    })?;
+
+    let insert_at = if let Some(first_child) = doc.first_child(root) {
+        // uppsala already tracked the child's exact start offset.
+        doc.node_range(first_child)
+            .ok_or_else(|| {
+                to_pyerr(bergshamra_core::Error::XmlStructure(
+                    "could not locate the root element's first child".to_string(),
+                ))
+            })?
+            .start
+    } else {
+        // Empty root: uppsala's byte span covers the whole element, so we only
+        // need to distinguish `<root/>` (self-closing) from `<root></root>`.
+        let range = doc.node_range(root).ok_or_else(|| {
+            to_pyerr(bergshamra_core::Error::XmlStructure(
+                "could not locate the root element".to_string(),
+            ))
+        })?;
+        let source = &xml[range.clone()];
+        if source.ends_with("/>") {
+            return Err(to_pyerr(bergshamra_core::Error::XmlStructure(
+                "cannot envelope-sign a self-closing root element".to_string(),
+            )));
+        }
+        // With no children the only remaining `<` opens the end tag (XML forbids
+        // a literal `<` in attribute values), so insert right before it.
+        let end_tag = source.rfind('<').ok_or_else(|| {
+            to_pyerr(bergshamra_core::Error::XmlStructure(
+                "could not locate the root element's end tag".to_string(),
+            ))
+        })?;
+        range.start + end_tag
+    };
+
+    let mut out = String::with_capacity(xml.len() + fragment.len());
+    out.push_str(&xml[..insert_at]);
+    out.push_str(fragment);
+    out.push_str(&xml[insert_at..]);
+    Ok(out)
 }

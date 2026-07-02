@@ -687,7 +687,7 @@ class TestVerification:
         """Verify a self-contained signed SAML response."""
         xml = (SIGNED_DIR / "valid-saml.xml").read_text()
         mgr = KeysManager()
-        ctx = DsigContext(mgr)
+        ctx = DsigContext(mgr, secure_defaults=False)
         ctx.insecure = True  # skip cert validation (self-signed)
         ctx.skip_time_checks = True
         result = pybergshamra.verify(ctx, xml)
@@ -704,7 +704,7 @@ class TestVerification:
         """Check VerifiedReference properties."""
         xml = (SIGNED_DIR / "valid-saml.xml").read_text()
         mgr = KeysManager()
-        ctx = DsigContext(mgr)
+        ctx = DsigContext(mgr, secure_defaults=False)
         ctx.insecure = True
         ctx.skip_time_checks = True
         result = pybergshamra.verify(ctx, xml)
@@ -723,7 +723,7 @@ class TestVerification:
         """A validly verified same-document reference reports digest_verified=True."""
         xml = (SIGNED_DIR / "valid-saml.xml").read_text()
         mgr = KeysManager()
-        ctx = DsigContext(mgr)
+        ctx = DsigContext(mgr, secure_defaults=False)
         ctx.insecure = True
         ctx.skip_time_checks = True
         result = pybergshamra.verify(ctx, xml)
@@ -736,7 +736,7 @@ class TestVerification:
         """Check VerifiedKeyInfo properties."""
         xml = (SIGNED_DIR / "valid-saml.xml").read_text()
         mgr = KeysManager()
-        ctx = DsigContext(mgr)
+        ctx = DsigContext(mgr, secure_defaults=False)
         ctx.insecure = True
         ctx.skip_time_checks = True
         result = pybergshamra.verify(ctx, xml)
@@ -756,7 +756,7 @@ class TestVerification:
         """Verify fails with tampered content."""
         xml = (SIGNED_DIR / "invalid-signature-changed-content.xml").read_text()
         mgr = KeysManager()
-        ctx = DsigContext(mgr)
+        ctx = DsigContext(mgr, secure_defaults=False)
         ctx.insecure = True
         ctx.skip_time_checks = True
         result = pybergshamra.verify(ctx, xml)
@@ -772,7 +772,7 @@ class TestVerification:
         """Verify fails with tampered signature value."""
         xml = (SIGNED_DIR / "invalid-signature-signature-value.xml").read_text()
         mgr = KeysManager()
-        ctx = DsigContext(mgr)
+        ctx = DsigContext(mgr, secure_defaults=False)
         ctx.insecure = True
         ctx.skip_time_checks = True
         result = pybergshamra.verify(ctx, xml)
@@ -781,7 +781,7 @@ class TestVerification:
     def test_verify_result_repr(self):
         xml = (SIGNED_DIR / "valid-saml.xml").read_text()
         mgr = KeysManager()
-        ctx = DsigContext(mgr)
+        ctx = DsigContext(mgr, secure_defaults=False)
         ctx.insecure = True
         ctx.skip_time_checks = True
         result = pybergshamra.verify(ctx, xml)
@@ -792,7 +792,7 @@ class TestVerification:
         """Test that VerifyResult supports `if result:` idiom."""
         xml = (SIGNED_DIR / "valid-saml.xml").read_text()
         mgr = KeysManager()
-        ctx = DsigContext(mgr)
+        ctx = DsigContext(mgr, secure_defaults=False)
         ctx.insecure = True
         ctx.skip_time_checks = True
         result = pybergshamra.verify(ctx, xml)
@@ -801,6 +801,50 @@ class TestVerification:
             pass  # valid
         else:
             pytest.fail("VerifyResult should be truthy for valid signature")
+
+    def test_verify_reference_coverage_flags(self):
+        """A valid same-document signature reports full local digest coverage."""
+        xml = (SIGNED_DIR / "valid-saml.xml").read_text()
+        mgr = KeysManager()
+        ctx = DsigContext(mgr, secure_defaults=False)
+        ctx.insecure = True
+        ctx.skip_time_checks = True
+        result = pybergshamra.verify(ctx, xml)
+        assert result.is_valid
+        assert result.all_reference_digests_verified is True
+        assert result.has_unverified_references is False
+
+    def test_invalid_result_coverage_flags(self):
+        """Coverage flags are both False for an invalid result."""
+        xml = (SIGNED_DIR / "invalid-signature-changed-content.xml").read_text()
+        mgr = KeysManager()
+        ctx = DsigContext(mgr, secure_defaults=False)
+        ctx.insecure = True
+        ctx.skip_time_checks = True
+        result = pybergshamra.verify(ctx, xml)
+        assert result.is_valid is False
+        assert result.all_reference_digests_verified is False
+        assert result.has_unverified_references is False
+
+    def test_verify_all_valid_saml(self):
+        """verify_all returns one VerifyResult per signature in the document."""
+        xml = (SIGNED_DIR / "valid-saml.xml").read_text()
+        mgr = KeysManager()
+        ctx = DsigContext(mgr, secure_defaults=False)
+        ctx.insecure = True
+        ctx.skip_time_checks = True
+        results = pybergshamra.verify_all(ctx, xml)
+        assert isinstance(results, list)
+        assert len(results) >= 1
+        assert all(isinstance(r, VerifyResult) for r in results)
+        assert all(r.is_valid for r in results)
+
+    def test_verify_all_no_signature_raises(self):
+        """verify_all raises a document-level error when no Signature is present."""
+        mgr = KeysManager()
+        ctx = DsigContext(mgr)
+        with pytest.raises(pybergshamra.BergshamraError):
+            pybergshamra.verify_all(ctx, "<root><child/></root>")
 
 
 # ===========================================================================
@@ -870,7 +914,7 @@ class TestSigning:
         verify_mgr = KeysManager()
         verify_mgr.add_key(key)
         verify_mgr.add_key(cert_key)
-        verify_ctx = DsigContext(verify_mgr)
+        verify_ctx = DsigContext(verify_mgr, secure_defaults=False)
         verify_ctx.insecure = True
         verify_ctx.skip_time_checks = True
         result = pybergshamra.verify(verify_ctx, signed_xml)
@@ -895,7 +939,7 @@ class TestSigning:
         verify_key = pybergshamra.load_hmac_key(hmac_data)
         verify_key.name = "TeskKeyName-Hmac"
         verify_mgr.add_key(verify_key)
-        verify_ctx = DsigContext(verify_mgr)
+        verify_ctx = DsigContext(verify_mgr, secure_defaults=False)
         result = pybergshamra.verify(verify_ctx, signed_xml)
         assert result.is_valid, f"Verification failed: {result.reason}"
 
@@ -917,10 +961,34 @@ class TestDsigContext:
         assert ctx.verification_time is None
         assert ctx.skip_time_checks is False
         assert ctx.enabled_key_data_x509 is False
+        assert ctx.trusted_keys_only is True
+        assert ctx.strict_verification is True
+        assert ctx.hmac_min_out_len == 160
+        assert ctx.base_dir is None
+
+    def test_keyword_only_secure_default_opt_out(self):
+        mgr = KeysManager()
+        ctx = DsigContext(mgr, secure_defaults=False)
         assert ctx.trusted_keys_only is False
         assert ctx.strict_verification is False
         assert ctx.hmac_min_out_len == 0
-        assert ctx.base_dir is None
+
+    def test_secure_default_opt_out_is_keyword_only(self):
+        mgr = KeysManager()
+        with pytest.raises(TypeError):
+            DsigContext(mgr, False)
+
+    def test_keyword_only_individual_security_overrides(self):
+        mgr = KeysManager()
+        ctx = DsigContext(
+            mgr,
+            trusted_keys_only=False,
+            strict_verification=False,
+            hmac_min_out_len=96,
+        )
+        assert ctx.trusted_keys_only is False
+        assert ctx.strict_verification is False
+        assert ctx.hmac_min_out_len == 96
 
     def test_set_properties(self):
         mgr = KeysManager()
@@ -965,14 +1033,14 @@ class TestDsigContext:
         assert ctx.strict_verification is True
         assert ctx.hmac_min_out_len == 160
 
-    def test_permissive_profile_matches_default(self):
-        """DsigContext.permissive() equals the default DsigContext(manager)."""
+    def test_permissive_profile_matches_keyword_opt_out(self):
+        """DsigContext.permissive() equals secure_defaults=False."""
         mgr = KeysManager()
         permissive = DsigContext.permissive(mgr)
-        default = DsigContext(mgr)
-        assert permissive.trusted_keys_only is default.trusted_keys_only is False
-        assert permissive.strict_verification is default.strict_verification is False
-        assert permissive.hmac_min_out_len == default.hmac_min_out_len == 0
+        opt_out = DsigContext(mgr, secure_defaults=False)
+        assert permissive.trusted_keys_only is opt_out.trusted_keys_only is False
+        assert permissive.strict_verification is opt_out.strict_verification is False
+        assert permissive.hmac_min_out_len == opt_out.hmac_min_out_len == 0
 
 
 # ===========================================================================
@@ -1362,3 +1430,136 @@ class TestSmoke:
         mgr = KeysManager()
         ctx = EncContext(mgr)
         assert ctx.disable_cipher_reference is False
+
+
+class TestSignEnveloped:
+    """High-level enveloped signing helper (sign_enveloped)."""
+
+    DOC = (
+        '<md:EntitiesDescriptor ID="ABC123" '
+        'xmlns:md="urn:oasis:names:tc:SAML:2.0:metadata">'
+        '<md:EntityDescriptor entityID="https://idp.example.org"/>'
+        '</md:EntitiesDescriptor>'
+    )
+
+    def _ctx(self):
+        key = pybergshamra.load_key_file(str(RSA_DIR / "rsa-2048-key.pem"))
+        key.name = "signer"
+        mgr = KeysManager()
+        mgr.add_key(key)
+        return DsigContext(mgr)
+
+    def _verify_ctx(self):
+        cert_pem = (RSA_DIR / "rsa-2048-cert.pem").read_bytes()
+        cert_key = pybergshamra.load_x509_cert_pem(cert_pem)
+        mgr = KeysManager()
+        mgr.add_key(cert_key)
+        ctx = DsigContext(mgr)
+        ctx.insecure = True
+        ctx.skip_time_checks = True
+        return ctx
+
+    def test_sign_enveloped_reference_id_roundtrip(self):
+        cert_pem = (RSA_DIR / "rsa-2048-cert.pem").read_text()
+        signed = pybergshamra.sign_enveloped(
+            self._ctx(), self.DOC, reference_id="ABC123", cert_pem=cert_pem
+        )
+        assert signed.index("<ds:Signature") < signed.index("<md:EntityDescriptor")
+        assert "X509Certificate" in signed
+        res = pybergshamra.verify(self._verify_ctx(), signed)
+        assert res.is_valid
+        assert [r.uri for r in res.references] == ["#ABC123"]
+
+    def test_sign_enveloped_whole_document(self):
+        signed = pybergshamra.sign_enveloped(self._ctx(), self.DOC)
+        assert pybergshamra.verify(self._verify_ctx(), signed).is_valid
+
+    def test_sign_enveloped_tamper_detected(self):
+        cert_pem = (RSA_DIR / "rsa-2048-cert.pem").read_text()
+        signed = pybergshamra.sign_enveloped(
+            self._ctx(), self.DOC, reference_id="ABC123", cert_pem=cert_pem
+        )
+        tampered = signed.replace("idp.example.org", "evil.example.org")
+        assert not pybergshamra.verify(self._verify_ctx(), tampered).is_valid
+
+    def test_sign_enveloped_rejects_unknown_algorithm(self):
+        with pytest.raises(pybergshamra.BergshamraError):
+            pybergshamra.sign_enveloped(
+                self._ctx(),
+                self.DOC,
+                signature_method='urn:bogus" /><x:Injected',
+            )
+
+    def test_sign_enveloped_rejects_non_base64_certificate_body(self):
+        bad_cert = (
+            "-----BEGIN CERTIFICATE-----\n"
+            'MIIB</ds:X509Certificate><ds:Object>bad</ds:Object>\n'
+            "-----END CERTIFICATE-----\n"
+        )
+        with pytest.raises(ValueError):
+            pybergshamra.sign_enveloped(self._ctx(), self.DOC, cert_pem=bad_cert)
+
+    def test_sign_enveloped_rejects_non_certificate_pem_text(self):
+        with pytest.raises(ValueError):
+            pybergshamra.sign_enveloped(
+                self._ctx(),
+                self.DOC,
+                cert_pem="<ds:Object>not a certificate</ds:Object>",
+            )
+
+    def test_sign_enveloped_rejects_bad_base64_padding(self):
+        # Valid base64 alphabet but a non-multiple-of-4 length / bad padding:
+        # the body must be actually decoded, not just alphabet-checked.
+        bad_cert = (
+            "-----BEGIN CERTIFICATE-----\n"
+            "MIIBIjANBg=A\n"  # stray '=' mid-stream, invalid base64
+            "-----END CERTIFICATE-----\n"
+        )
+        with pytest.raises(ValueError):
+            pybergshamra.sign_enveloped(self._ctx(), self.DOC, cert_pem=bad_cert)
+
+    def test_sign_enveloped_rejects_self_closing_root(self):
+        # A self-closing root cannot host a signature child. Whitespace before
+        # the "/>" must be handled too (uppsala parses the span; we do not scan
+        # for the byte immediately before ">").
+        for doc in ('<root ID="X"/>', '<root ID="X" />'):
+            with pytest.raises(pybergshamra.BergshamraError):
+                pybergshamra.sign_enveloped(self._ctx(), doc, reference_id="X")
+
+    def test_sign_enveloped_empty_root_signs_before_end_tag(self):
+        # An empty (but not self-closing) root gets the signature inserted just
+        # before its end tag, producing valid, verifiable XML.
+        doc = '<root ID="X"></root>'
+        signed = pybergshamra.sign_enveloped(self._ctx(), doc, reference_id="X")
+        assert signed.index("<ds:Signature") < signed.index("</root>")
+        assert pybergshamra.verify(self._verify_ctx(), signed).is_valid
+
+    def test_sign_enveloped_rejects_empty_reference_id(self):
+        with pytest.raises(ValueError):
+            pybergshamra.sign_enveloped(self._ctx(), self.DOC, reference_id="")
+
+    def test_sign_enveloped_rejects_hash_prefixed_reference_id(self):
+        # A raw ID is expected; a leading '#' would otherwise produce URI="##..".
+        with pytest.raises(ValueError):
+            pybergshamra.sign_enveloped(
+                self._ctx(), self.DOC, reference_id="#ABC123"
+            )
+
+    def test_sign_enveloped_rejects_empty_certificate_block(self):
+        bad_cert = (
+            "-----BEGIN CERTIFICATE-----\n"
+            "-----END CERTIFICATE-----\n"
+        )
+        with pytest.raises(ValueError):
+            pybergshamra.sign_enveloped(self._ctx(), self.DOC, cert_pem=bad_cert)
+
+    def test_sign_enveloped_rejects_nested_certificate_block(self):
+        bad_cert = (
+            "-----BEGIN CERTIFICATE-----\n"
+            "AAAA\n"
+            "-----BEGIN CERTIFICATE-----\n"
+            "AAAA\n"
+            "-----END CERTIFICATE-----\n"
+        )
+        with pytest.raises(ValueError):
+            pybergshamra.sign_enveloped(self._ctx(), self.DOC, cert_pem=bad_cert)
