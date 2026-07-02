@@ -3,7 +3,7 @@
 project = "pybergshamra"
 copyright = "2026, Kushal Das"
 author = "Kushal Das"
-release = "0.6.2"
+release = "0.6.3"
 
 extensions = [
     "sphinx.ext.autodoc",
