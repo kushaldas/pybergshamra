@@ -1,6 +1,19 @@
 # Changelog
 
 
+## 0.6.4 [2026-07-03]
+
+### Changed
+
+- Updated `bergshamra` crates `0.6.3` -> `0.6.4`, which pulls in `uppsala`
+  `0.8.0`. The XML parser now enforces the reserved namespace-binding rules of
+  Namespaces in XML 1.0 §3 and rejects documents that bind the `xml`/`xmlns`
+  namespaces illegally (such documents were never namespace-well-formed but
+  were previously accepted). The release also brings faster serialization and
+  fixes for `prepare_xpath()` node-arena growth and attribute `NodeId`
+  stability across re-preparation. No Python API changes.
+
+
 ## 0.6.3 [2026-07-02]
 
 ### Changed
