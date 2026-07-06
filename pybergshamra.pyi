@@ -445,8 +445,10 @@ class DsigContext:
         """Create a DSig context.
 
         Secure defaults are enabled unless ``secure_defaults=False`` is passed
-        as a keyword argument. Individual secure defaults can also be overridden
-        with keyword-only arguments.
+        as a keyword argument. That opt-out keeps local reference-digest coverage
+        required unless ``require_reference_digests=False`` is also passed.
+        Individual secure defaults can also be overridden with keyword-only
+        arguments.
         """
         ...
     @staticmethod
@@ -459,7 +461,8 @@ class DsigContext:
     @staticmethod
     def permissive(keys_manager: KeysManager) -> DsigContext:
         """Permissive context (mirrors Rust ``DsigContext::new_permissive()``):
-        standard W3C behaviour with inline ``KeyInfo`` extraction. Prefer
+        standard W3C behaviour with inline ``KeyInfo`` extraction while still
+        requiring local reference-digest coverage. Prefer
         ``DsigContext(manager, secure_defaults=False)`` for new code so the
         opt-out is explicit at construction."""
         ...

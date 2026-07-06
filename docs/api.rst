@@ -1089,7 +1089,9 @@ DsigContext
 
    :param keys_manager: The key store to use for sign/verify operations.
    :param secure_defaults: Use hardened verification defaults. Pass
-      ``False`` explicitly for permissive W3C/inline-KeyInfo behavior.
+      ``False`` explicitly for inline-KeyInfo and relaxed structural/HMAC
+      behavior. Local reference-digest coverage is still required unless
+      ``require_reference_digests=False`` is also passed.
 
    .. code-block:: python
 

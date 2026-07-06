@@ -288,30 +288,37 @@ impl DsigContext {
         strict_verification: Option<bool>,
         hmac_min_out_len: Option<usize>,
         require_reference_digests: Option<bool>,
-    ) -> Self {
-        let default_trusted_keys_only = secure_defaults;
-        let default_strict_verification = secure_defaults;
-        let default_hmac_min_out_len = if secure_defaults { 160 } else { 0 };
+    ) -> PyResult<Self> {
+        let mgr_guard = keys_manager
+            .inner
+            .lock()
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+        let rust_ctx = if secure_defaults {
+            RustDsigContext::new(mgr_guard.clone())
+        } else {
+            RustDsigContext::new_permissive(mgr_guard.clone())
+        };
 
-        DsigContext {
+        Ok(DsigContext {
             keys_manager: keys_manager.clone(),
             id_attrs: Vec::new(),
             url_maps: Vec::new(),
-            hmac_min_out_len: hmac_min_out_len.unwrap_or(default_hmac_min_out_len),
-            debug: false,
-            base_dir: None,
-            insecure: false,
-            verify_keys: false,
-            verification_time: None,
-            skip_time_checks: false,
-            enabled_key_data_x509: false,
-            trusted_keys_only: trusted_keys_only.unwrap_or(default_trusted_keys_only),
-            strict_verification: strict_verification.unwrap_or(default_strict_verification),
-            require_reference_digests: require_reference_digests.unwrap_or(true),
+            hmac_min_out_len: hmac_min_out_len.unwrap_or(rust_ctx.hmac_min_out_len),
+            debug: rust_ctx.debug,
+            base_dir: rust_ctx.base_dir,
+            insecure: rust_ctx.insecure,
+            verify_keys: rust_ctx.verify_keys,
+            verification_time: rust_ctx.verification_time,
+            skip_time_checks: rust_ctx.skip_time_checks,
+            enabled_key_data_x509: rust_ctx.enabled_key_data_x509,
+            trusted_keys_only: trusted_keys_only.unwrap_or(rust_ctx.trusted_keys_only),
+            strict_verification: strict_verification.unwrap_or(rust_ctx.strict_verification),
+            require_reference_digests: require_reference_digests
+                .unwrap_or(rust_ctx.require_reference_digests),
             base_secure: secure_defaults,
             hsm_signer: None,
             hsm_verifier: None,
-        }
+        })
     }
 
     /// Build the Rust DsigContext from Python-side state.
@@ -367,7 +374,7 @@ impl DsigContext {
         strict_verification: Option<bool>,
         hmac_min_out_len: Option<usize>,
         require_reference_digests: Option<bool>,
-    ) -> Self {
+    ) -> PyResult<Self> {
         DsigContext::from_security_defaults(
             keys_manager,
             secure_defaults,
@@ -384,16 +391,17 @@ impl DsigContext {
     /// secure defaults upstream sets (``to_rust()`` starts from
     /// ``RustDsigContext::new()``). Recommended for federated-identity / SAML.
     #[staticmethod]
-    fn secure(keys_manager: &KeysManager) -> Self {
+    fn secure(keys_manager: &KeysManager) -> PyResult<Self> {
         DsigContext::from_security_defaults(keys_manager, true, None, None, None, None)
     }
 
     /// Build a permissive context (mirrors Rust ``DsigContext::new_permissive()``):
-    /// standard W3C behaviour with inline ``KeyInfo`` extraction enabled.
+    /// standard W3C behaviour with inline ``KeyInfo`` extraction enabled while
+    /// still requiring local reference-digest coverage.
     /// Prefer ``DsigContext(manager, secure_defaults=False)`` when constructing
     /// permissive contexts from Python code so the opt-out is explicit.
     #[staticmethod]
-    fn permissive(keys_manager: &KeysManager) -> Self {
+    fn permissive(keys_manager: &KeysManager) -> PyResult<Self> {
         DsigContext::from_security_defaults(keys_manager, false, None, None, None, None)
     }
 
@@ -785,8 +793,7 @@ fn pem_certificate_bodies(pem: &str) -> PyResult<Vec<String>> {
 
 /// Splice ``fragment`` in as the first child of the document's root element by
 /// inserting it immediately after the root element's opening tag. Uses uppsala
-/// (via bergshamra-xml) to locate the root, then scans for the tag-closing
-/// ``>`` while respecting quoted attribute values.
+/// (via bergshamra-xml) for both root location and start-tag byte offsets.
 fn insert_first_child_of_root(xml: &str, fragment: &str) -> PyResult<String> {
     let doc = bergshamra_xml::uppsala::parse(xml)
         .map_err(|e| to_pyerr(bergshamra_core::Error::XmlParse(e.to_string())))?;
@@ -800,7 +807,7 @@ fn insert_first_child_of_root(xml: &str, fragment: &str) -> PyResult<String> {
             "could not locate the root element".to_string(),
         ))
     })?;
-    let offset = open_tag_end(xml, range.start).ok_or_else(|| {
+    let offset = root_start_tag_end(xml, range.start)?.ok_or_else(|| {
         to_pyerr(bergshamra_core::Error::XmlStructure(
             "cannot envelope-sign a self-closing root element".to_string(),
         ))
@@ -812,32 +819,44 @@ fn insert_first_child_of_root(xml: &str, fragment: &str) -> PyResult<String> {
     Ok(out)
 }
 
-/// Return the byte offset just past the ``>`` that closes the start tag
-/// beginning at ``start``. Returns ``None`` for a self-closing (`/>`) tag.
-fn open_tag_end(xml: &str, start: usize) -> Option<usize> {
-    let bytes = xml.as_bytes();
-    let mut i = start;
-    let mut quote: Option<u8> = None;
-    while i < bytes.len() {
-        let c = bytes[i];
-        match quote {
-            Some(q) => {
-                if c == q {
-                    quote = None;
-                }
+/// Return the byte offset immediately after the document element's start tag.
+/// Returns ``None`` for a self-closing document element.
+fn root_start_tag_end(xml: &str, root_start: usize) -> PyResult<Option<usize>> {
+    let mut parser = bergshamra_xml::uppsala::PullParser::new(xml);
+    let mut start_tag_end = None;
+
+    while let Some(event) = parser
+        .next_event()
+        .map_err(|e| to_pyerr(bergshamra_core::Error::XmlParse(e.to_string())))?
+    {
+        match event {
+            bergshamra_xml::uppsala::PullEvent::StartElement {
+                byte_start,
+                byte_end,
+                ..
+            } if byte_start == root_start => {
+                start_tag_end = Some(byte_end);
             }
-            None => match c {
-                b'"' | b'\'' => quote = Some(c),
-                b'>' => {
-                    if i > start && bytes[i - 1] == b'/' {
-                        return None; // self-closing root
-                    }
-                    return Some(i + 1);
+            bergshamra_xml::uppsala::PullEvent::EndElement { byte_start, .. }
+                if start_tag_end.is_some() =>
+            {
+                if byte_start == root_start {
+                    return Ok(None);
                 }
-                _ => {}
-            },
+                return Ok(start_tag_end);
+            }
+            bergshamra_xml::uppsala::PullEvent::StartElement { .. }
+            | bergshamra_xml::uppsala::PullEvent::Text { .. }
+            | bergshamra_xml::uppsala::PullEvent::CData { .. }
+            | bergshamra_xml::uppsala::PullEvent::Comment { .. }
+            | bergshamra_xml::uppsala::PullEvent::ProcessingInstruction { .. }
+                if start_tag_end.is_some() =>
+            {
+                return Ok(start_tag_end);
+            }
+            _ => {}
         }
-        i += 1;
     }
-    None
+
+    Ok(start_tag_end)
 }
