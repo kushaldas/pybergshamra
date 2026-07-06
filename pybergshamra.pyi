@@ -525,7 +525,9 @@ class DsigContext:
     def hmac_min_out_len(self, value: int) -> None: ...
     @property
     def require_reference_digests(self) -> bool:
-        """Require at least one locally verified Reference digest for validity."""
+        """Require at least one Reference and require every Reference digest
+        to be verified locally for validity.
+        """
         ...
     @require_reference_digests.setter
     def require_reference_digests(self, value: bool) -> None: ...

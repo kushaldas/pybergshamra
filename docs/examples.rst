@@ -28,6 +28,13 @@ Load an IdP certificate and verify. The common ID attribute names ``Id``,
     else:
         print(f"SAML signature invalid: {result.reason}")
 
+.. note::
+
+   :func:`~pybergshamra.verify` checks only the first ``<Signature>`` in
+   document order. For multi-signature SAML responses, use
+   :func:`~pybergshamra.verify_all` and check the returned result for each
+   signature your application requires.
+
 Sign an XML document (enveloped)
 --------------------------------
 

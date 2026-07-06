@@ -1294,8 +1294,8 @@ verify and sign
 
 .. function:: verify(ctx: DsigContext, xml: str) -> VerifyResult
 
-   Verify a signed XML document. Returns a :class:`VerifyResult` -- use
-   ``bool(result)`` to check validity.
+   Verify the first ``<Signature>`` in document order. Returns a
+   :class:`VerifyResult` -- use ``bool(result)`` to check validity.
 
    :param ctx: A configured :class:`DsigContext`.
    :param xml: The signed XML string.
@@ -1306,6 +1306,21 @@ verify and sign
       result = pybergshamra.verify(ctx, xml)
       if result:
           print("Signature valid")
+
+.. function:: verify_all(ctx: DsigContext, xml: str) -> list[VerifyResult]
+
+   Verify every ``<Signature>`` element in the document, returning one
+   :class:`VerifyResult` per signature in document order.
+
+   Unlike :func:`verify`, each signature is verified independently and a
+   per-signature failure becomes an invalid entry rather than aborting the
+   whole call. Use this for multi-signature documents such as SAML responses
+   signed at both the Response and Assertion levels.
+
+   :param ctx: A configured :class:`DsigContext`.
+   :param xml: The signed XML string.
+   :raises XmlError: For document-level failures such as parse errors,
+      duplicate-ID conflicts, or no ``<Signature>`` element.
 
 .. function:: sign(ctx: DsigContext, template_xml: str) -> str
 
@@ -1322,6 +1337,19 @@ verify and sign
 
       signed_xml = pybergshamra.sign(ctx, template)
       print(signed_xml)
+
+.. function:: sign_enveloped(ctx: DsigContext, xml: str, *, reference_id: str | None = None, signature_method: str | None = None, digest_method: str | None = None, c14n_method: str | None = None, cert_pem: str | None = None) -> str
+
+   Build an enveloped ``<ds:Signature>`` template, insert it into ``xml``, sign
+   it, and return the signed XML. ``reference_id`` must be a raw ID value
+   without a leading ``#``; pass ``None`` to sign the whole document.
+
+   :param ctx: A configured :class:`DsigContext`.
+   :param xml: The unsigned XML document.
+   :param cert_pem: Optional PEM certificate block(s) to embed in
+      ``ds:X509Data``.
+   :raises ValueError: If ``reference_id`` or ``cert_pem`` is malformed.
+   :raises BergshamraError: If signing fails.
 
 XML encryption
 --------------

@@ -497,7 +497,8 @@ impl DsigContext {
         self.hmac_min_out_len = v;
     }
 
-    /// Require at least one locally verified Reference digest for validity.
+    /// Require at least one Reference and require every Reference digest to be
+    /// verified locally for validity.
     #[getter]
     fn require_reference_digests(&self) -> bool {
         self.require_reference_digests
