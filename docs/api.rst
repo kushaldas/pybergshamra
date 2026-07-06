@@ -1081,7 +1081,7 @@ Digital signatures
 DsigContext
 ^^^^^^^^^^^
 
-.. class:: DsigContext(keys_manager: KeysManager, *, secure_defaults=True, trusted_keys_only=None, strict_verification=None, hmac_min_out_len=None, require_reference_digests=None)
+.. class:: DsigContext(keys_manager: KeysManager, *, secure_defaults: bool = True, trusted_keys_only: bool | None = None, strict_verification: bool | None = None, hmac_min_out_len: int | None = None, require_reference_digests: bool | None = None)
 
    Context for XML Digital Signature operations. Holds configuration and a
    :class:`KeysManager`. Build one, set properties, then call :func:`verify`
