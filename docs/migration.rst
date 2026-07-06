@@ -197,6 +197,7 @@ recognized by default, so SAML's ``ID`` does not need to be registered again.
     key = pybergshamra.load_x509_cert_pem(open("idp-cert.pem", "rb").read())
     manager.add_key(key)
 
+    saml_xml = open("saml-response.xml").read()
     ctx = pybergshamra.DsigContext(manager)
     result = pybergshamra.verify(ctx, saml_xml)
 

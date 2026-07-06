@@ -1175,9 +1175,10 @@ DsigContext
 
       .. code-block:: python
 
+         xml = open("signed.xml").read()
          ctx = pybergshamra.DsigContext(manager)
          ctx.add_id_attr("CustomId")
-         result = pybergshamra.verify(ctx, saml_xml)
+         result = pybergshamra.verify(ctx, xml)
 
    .. method:: add_url_map(url: str, file_path: str) -> None
 
