@@ -200,6 +200,10 @@ recognized by default, so SAML's ``ID`` does not need to be registered again.
     saml_xml = open("saml-response.xml").read()
     ctx = pybergshamra.DsigContext(manager)
     result = pybergshamra.verify(ctx, saml_xml)
+    if result:
+        print("Valid!")
+    else:
+        print(f"Invalid: {result.reason}")
 
 Signing an XML document
 -----------------------

@@ -32,7 +32,7 @@ Load an IdP certificate and verify. The common ID attribute names ``Id``,
 
    :func:`~pybergshamra.verify` checks only the first ``<Signature>`` in
    document order. For multi-signature SAML responses, use
-   :func:`~pybergshamra.verify_all` and check the returned result for each
+   :func:`~pybergshamra.verify_all` and check each returned result for the
    signature your application requires.
 
 Sign an XML document (enveloped)
