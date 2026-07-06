@@ -385,10 +385,7 @@ class VerifyResult:
 
     Use ``bool(result)`` to check signature validity. If your application
     requires every reference digest to be computed locally, also require
-    ``all_reference_digests_verified`` -- it is the definitive coverage check.
-    ``has_unverified_references`` is only an additional signal: it is also
-    ``False`` when there are zero ``<Reference>`` elements, which still means
-    no local digest coverage.
+    ``all_reference_digests_verified``.
     """
 
     @property
@@ -443,24 +440,29 @@ class DsigContext:
         trusted_keys_only: Optional[bool] = None,
         strict_verification: Optional[bool] = None,
         hmac_min_out_len: Optional[int] = None,
+        require_reference_digests: Optional[bool] = None,
     ) -> None:
         """Create a DSig context.
 
         Secure defaults are enabled unless ``secure_defaults=False`` is passed
-        as a keyword argument. Individual secure defaults can also be overridden
-        with keyword-only arguments.
+        as a keyword argument. That opt-out keeps local reference-digest coverage
+        required unless ``require_reference_digests=False`` is also passed.
+        Individual secure defaults can also be overridden with keyword-only
+        arguments.
         """
         ...
     @staticmethod
     def secure(keys_manager: KeysManager) -> DsigContext:
         """Secure-by-default context (mirrors Rust ``DsigContext::new()``):
         ``trusted_keys_only=True``, ``strict_verification=True``,
-        ``hmac_min_out_len=160``. Recommended for federated identity / SAML."""
+        ``hmac_min_out_len=160`` and ``require_reference_digests=True``.
+        Recommended for federated identity / SAML."""
         ...
     @staticmethod
     def permissive(keys_manager: KeysManager) -> DsigContext:
         """Permissive context (mirrors Rust ``DsigContext::new_permissive()``):
-        standard W3C behaviour with inline ``KeyInfo`` extraction. Prefer
+        standard W3C behaviour with inline ``KeyInfo`` extraction while still
+        requiring local reference-digest coverage. Prefer
         ``DsigContext(manager, secure_defaults=False)`` for new code so the
         opt-out is explicit at construction."""
         ...
@@ -524,6 +526,14 @@ class DsigContext:
         ...
     @hmac_min_out_len.setter
     def hmac_min_out_len(self, value: int) -> None: ...
+    @property
+    def require_reference_digests(self) -> bool:
+        """Require at least one Reference and require every Reference digest
+        to be verified locally for validity.
+        """
+        ...
+    @require_reference_digests.setter
+    def require_reference_digests(self, value: bool) -> None: ...
     @property
     def base_dir(self) -> Optional[str]:
         """Base directory for resolving relative external URIs."""

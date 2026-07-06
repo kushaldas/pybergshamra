@@ -161,12 +161,8 @@ Signature verification
     ctx = pybergshamra.DsigContext(manager)
     result = pybergshamra.verify(ctx, xml)
 
-    # Also require ``all_reference_digests_verified`` so a reference that was
-    # not digest-verified locally is not trusted implicitly.
-    if result and result.all_reference_digests_verified:
+    if result:
         print("Valid!", result.key_info.algorithm)
-    elif result:
-        print("Valid signature, but a reference needs out-of-band checking")
     else:
         print("Invalid:", result.reason)
 
@@ -190,6 +186,9 @@ Signature verification with ID registration
 
 **pybergshamra:**
 
+The common ID attribute names ``Id``, ``ID``, ``id`` and ``AssertionID`` are
+recognized by default, so SAML's ``ID`` does not need to be registered again.
+
 .. code-block:: python
 
     import pybergshamra
@@ -198,20 +197,13 @@ Signature verification with ID registration
     key = pybergshamra.load_x509_cert_pem(open("idp-cert.pem", "rb").read())
     manager.add_key(key)
 
+    saml_xml = open("saml-response.xml").read()
     ctx = pybergshamra.DsigContext(manager)
-    # "ID" is a default ID attribute name, so no add_id_attr() call is needed
-    # (unlike xmlsec, which requires registering it explicitly).
     result = pybergshamra.verify(ctx, saml_xml)
-
-    # A truthy result means the signature math checked out, but some references
-    # (e.g. external ones) may not have been digest-verified locally. Require
-    # full local coverage before trusting the document.
-    if result and result.all_reference_digests_verified:
-        print("valid, all references verified locally")
-    elif result:
-        print("valid signature, but a reference needs out-of-band checking")
+    if result:
+        print("Valid!")
     else:
-        print("invalid:", result.reason)
+        print(f"Invalid: {result.reason}")
 
 Signing an XML document
 -----------------------

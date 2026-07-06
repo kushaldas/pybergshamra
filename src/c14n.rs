@@ -153,7 +153,7 @@ pub fn canonicalize_subtree<'py>(
     // Parse with bergshamra_xml to get ID map and inner roxmltree doc
     let xml_doc = XmlDocument::parse(xml.to_string()).map_err(to_pyerr)?;
     let doc = xml_doc.parse_doc().map_err(to_pyerr)?;
-    let id_map = xml_doc.build_id_map(&doc);
+    let id_map = xml_doc.build_id_map(&doc).map_err(to_pyerr)?;
     let node_id = XmlDocument::find_by_id(&doc, &id_map, element_id).ok_or_else(|| {
         pyo3::exceptions::PyValueError::new_err(format!(
             "Element with ID '{}' not found",
