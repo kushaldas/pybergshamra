@@ -1081,22 +1081,15 @@ Digital signatures
 DsigContext
 ^^^^^^^^^^^
 
-.. class:: DsigContext(keys_manager: KeysManager, *, secure_defaults: bool = True, trusted_keys_only: bool | None = None, strict_verification: bool | None = None, hmac_min_out_len: int | None = None)
+.. class:: DsigContext(keys_manager: KeysManager, *, secure_defaults=True, trusted_keys_only=None, strict_verification=None, hmac_min_out_len=None, require_reference_digests=None)
 
    Context for XML Digital Signature operations. Holds configuration and a
    :class:`KeysManager`. Build one, set properties, then call :func:`verify`
    or :func:`sign`.
 
    :param keys_manager: The key store to use for sign/verify operations.
-   :param secure_defaults: Enable secure defaults. Defaults to ``True``.
-      Pass ``False`` as a keyword argument only when standard W3C XML-DSig
-      behaviour with inline ``KeyInfo`` extraction is required.
-   :param trusted_keys_only: Optional keyword-only override for inline
-      ``KeyInfo`` extraction.
-   :param strict_verification: Optional keyword-only override for strict
-      reference target validation.
-   :param hmac_min_out_len: Optional keyword-only override for the minimum HMAC
-      output length, in bits.
+   :param secure_defaults: Use hardened verification defaults. Pass
+      ``False`` explicitly for permissive W3C/inline-KeyInfo behavior.
 
    .. code-block:: python
 
@@ -1141,13 +1134,13 @@ DsigContext
       :type: bool
 
       Only use pre-configured keys, skip inline KeyInfo extraction.
-      Default: ``True``.
+      Default: ``True`` when ``secure_defaults=True``.
 
    .. attribute:: strict_verification
       :type: bool
 
       Enforce strict reference target validation (anti-XSW protection).
-      Default: ``True``.
+      Default: ``True`` when ``secure_defaults=True``.
 
       .. code-block:: python
 
@@ -1158,8 +1151,14 @@ DsigContext
    .. attribute:: hmac_min_out_len
       :type: int
 
-      Minimum HMAC output length in bits. Default: ``160``. ``0`` means use the
-      XML-DSig spec default and should only be used for compatibility.
+      Minimum HMAC output length in bits. ``0`` means use the spec default.
+      Default: ``160`` when ``secure_defaults=True``.
+
+   .. attribute:: require_reference_digests
+      :type: bool
+
+      Require a valid signature to contain at least one ``Reference`` and
+      require every reference digest to be verified locally. Default: ``True``.
 
    .. attribute:: base_dir
       :type: str | None
@@ -1168,16 +1167,15 @@ DsigContext
 
    .. method:: add_id_attr(name: str) -> None
 
-      Register an *additional* ID attribute name. The common names — ``Id``,
-      ``ID``, ``id`` and ``AssertionID`` — are already recognized by default
-      (so SAML's ``ID`` works out of the box). Only call this for a *non-default*
-      attribute name; re-registering a default can raise a duplicate-ID error.
+      Register an additional ID attribute name. The common names ``Id``,
+      ``ID``, ``id`` and ``AssertionID`` are recognized by default; only add
+      non-default ID attributes.
 
       .. code-block:: python
 
          ctx = pybergshamra.DsigContext(manager)
-         ctx.add_id_attr("MyCustomId")  # a non-default ID attribute
-         result = pybergshamra.verify(ctx, xml)
+         ctx.add_id_attr("CustomId")
+         result = pybergshamra.verify(ctx, saml_xml)
 
    .. method:: add_url_map(url: str, file_path: str) -> None
 
@@ -1194,10 +1192,7 @@ VerifyResult
 
    Result of signature verification. ``bool(result)`` checks signature validity
    only. Applications that require every ``<Reference>`` digest to be checked
-   locally should also require :attr:`all_reference_digests_verified` — it is
-   the definitive coverage check. :attr:`has_unverified_references` is only an
-   additional signal: it is also ``False`` when there are zero ``<Reference>``
-   elements, which still means no local digest coverage.
+   locally should also require :attr:`all_reference_digests_verified`.
 
    .. attribute:: is_valid
       :type: bool
@@ -1228,29 +1223,25 @@ VerifyResult
       :type: bool
 
       ``True`` if the signature is valid but at least one ``<Reference>``
-      digest was **not** computed and verified locally (for example a
-      ``cid:`` WS-Security MIME attachment). Such references must be verified
-      out of band before the signature can be trusted. Always ``False`` for an
-      invalid result.
+      digest was not computed and verified locally. Such references must be
+      verified out of band before the signature can be trusted. Always
+      ``False`` for an invalid result.
 
    .. attribute:: all_reference_digests_verified
       :type: bool
 
       ``True`` only if the signature is valid, has at least one
-      ``<Reference>``, and **every** reference digest was computed and verified
-      locally. ``False`` for an invalid result and for a valid result with no
-      references (which provides no local digest coverage).
+      ``<Reference>``, and every reference digest was computed and verified
+      locally.
 
    .. code-block:: python
 
       result = pybergshamra.verify(ctx, xml)
-      if result and result.all_reference_digests_verified:
+      if result:
           print("Valid!")
           for ref in result.references:
               print(f"  Reference URI: {ref.uri}")
           print(f"  Key algorithm: {result.key_info.algorithm}")
-      elif result:
-          print("Valid signature, but some references need out-of-band checks")
       else:
           print(f"Invalid: {result.reason}")
 
@@ -1275,9 +1266,6 @@ VerifiedReference
       :type: bool
 
       Whether this reference's digest was cryptographically verified.
-      ``False`` for references the engine could not check itself (e.g.
-      ``cid:`` MIME attachments in WS-Security); the caller must verify those
-      out of band before trusting the signature.
 
 VerifiedKeyInfo
 ^^^^^^^^^^^^^^^
@@ -1309,44 +1297,15 @@ verify and sign
    Verify a signed XML document. Returns a :class:`VerifyResult` -- use
    ``bool(result)`` to check validity.
 
-   Only the **first** ``<Signature>`` in document order is verified; use
-   :func:`verify_all` for multi-signature documents.
-
    :param ctx: A configured :class:`DsigContext`.
    :param xml: The signed XML string.
    :raises XmlError: If the XML cannot be parsed.
 
    .. code-block:: python
 
-      # Checks only the first <Signature>; see verify_all() for documents
-      # signed in more than one place.
       result = pybergshamra.verify(ctx, xml)
-      # ``bool(result)`` confirms the signature math; also require
-      # ``all_reference_digests_verified`` before trusting the document.
-      if result and result.all_reference_digests_verified:
+      if result:
           print("Signature valid")
-
-.. function:: verify_all(ctx: DsigContext, xml: str) -> list[VerifyResult]
-
-   Verify **every** ``<Signature>`` element in the document, returning one
-   :class:`VerifyResult` per signature in document order.
-
-   Unlike :func:`verify` (which reports only the first signature), each
-   signature is verified independently and a per-signature failure becomes an
-   invalid entry rather than aborting the call, so the returned list may mix
-   valid and invalid results. Use this for multi-signature documents such as
-   SAML responses signed at both the Response and Assertion levels.
-
-   :param ctx: A configured :class:`DsigContext`.
-   :param xml: The signed XML string.
-   :raises XmlError: For document-level failures (parse error, duplicate-ID
-      conflict, or no ``<Signature>`` element at all).
-
-   .. code-block:: python
-
-      results = pybergshamra.verify_all(ctx, saml_xml)
-      if all(r.is_valid for r in results):
-          print(f"All {len(results)} signatures valid")
 
 .. function:: sign(ctx: DsigContext, template_xml: str) -> str
 

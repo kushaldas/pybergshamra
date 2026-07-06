@@ -385,10 +385,7 @@ class VerifyResult:
 
     Use ``bool(result)`` to check signature validity. If your application
     requires every reference digest to be computed locally, also require
-    ``all_reference_digests_verified`` -- it is the definitive coverage check.
-    ``has_unverified_references`` is only an additional signal: it is also
-    ``False`` when there are zero ``<Reference>`` elements, which still means
-    no local digest coverage.
+    ``all_reference_digests_verified``.
     """
 
     @property
@@ -443,6 +440,7 @@ class DsigContext:
         trusted_keys_only: Optional[bool] = None,
         strict_verification: Optional[bool] = None,
         hmac_min_out_len: Optional[int] = None,
+        require_reference_digests: Optional[bool] = None,
     ) -> None:
         """Create a DSig context.
 
@@ -455,7 +453,8 @@ class DsigContext:
     def secure(keys_manager: KeysManager) -> DsigContext:
         """Secure-by-default context (mirrors Rust ``DsigContext::new()``):
         ``trusted_keys_only=True``, ``strict_verification=True``,
-        ``hmac_min_out_len=160``. Recommended for federated identity / SAML."""
+        ``hmac_min_out_len=160`` and ``require_reference_digests=True``.
+        Recommended for federated identity / SAML."""
         ...
     @staticmethod
     def permissive(keys_manager: KeysManager) -> DsigContext:
@@ -524,6 +523,12 @@ class DsigContext:
         ...
     @hmac_min_out_len.setter
     def hmac_min_out_len(self, value: int) -> None: ...
+    @property
+    def require_reference_digests(self) -> bool:
+        """Require at least one locally verified Reference digest for validity."""
+        ...
+    @require_reference_digests.setter
+    def require_reference_digests(self, value: bool) -> None: ...
     @property
     def base_dir(self) -> Optional[str]:
         """Base directory for resolving relative external URIs."""

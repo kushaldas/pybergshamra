@@ -964,6 +964,7 @@ class TestDsigContext:
         assert ctx.trusted_keys_only is True
         assert ctx.strict_verification is True
         assert ctx.hmac_min_out_len == 160
+        assert ctx.require_reference_digests is True
         assert ctx.base_dir is None
 
     def test_keyword_only_secure_default_opt_out(self):
@@ -972,6 +973,7 @@ class TestDsigContext:
         assert ctx.trusted_keys_only is False
         assert ctx.strict_verification is False
         assert ctx.hmac_min_out_len == 0
+        assert ctx.require_reference_digests is True
 
     def test_secure_default_opt_out_is_keyword_only(self):
         mgr = KeysManager()
@@ -985,10 +987,12 @@ class TestDsigContext:
             trusted_keys_only=False,
             strict_verification=False,
             hmac_min_out_len=96,
+            require_reference_digests=False,
         )
         assert ctx.trusted_keys_only is False
         assert ctx.strict_verification is False
         assert ctx.hmac_min_out_len == 96
+        assert ctx.require_reference_digests is False
 
     def test_set_properties(self):
         mgr = KeysManager()
@@ -1011,13 +1015,15 @@ class TestDsigContext:
         assert ctx.strict_verification is True
         ctx.hmac_min_out_len = 128
         assert ctx.hmac_min_out_len == 128
+        ctx.require_reference_digests = False
+        assert ctx.require_reference_digests is False
         ctx.base_dir = "/tmp"
         assert ctx.base_dir == "/tmp"
 
     def test_add_id_attr(self):
         mgr = KeysManager()
         ctx = DsigContext(mgr)
-        ctx.add_id_attr("AssertionID")
+        ctx.add_id_attr("CustomId")
         # No direct way to verify, but it should not raise
 
     def test_add_url_map(self):
@@ -1032,6 +1038,7 @@ class TestDsigContext:
         assert ctx.trusted_keys_only is True
         assert ctx.strict_verification is True
         assert ctx.hmac_min_out_len == 160
+        assert ctx.require_reference_digests is True
 
     def test_permissive_profile_matches_keyword_opt_out(self):
         """DsigContext.permissive() equals secure_defaults=False."""
@@ -1041,6 +1048,7 @@ class TestDsigContext:
         assert permissive.trusted_keys_only is opt_out.trusted_keys_only is False
         assert permissive.strict_verification is opt_out.strict_verification is False
         assert permissive.hmac_min_out_len == opt_out.hmac_min_out_len == 0
+        assert permissive.require_reference_digests is opt_out.require_reference_digests is True
 
 
 # ===========================================================================
@@ -1520,15 +1528,12 @@ class TestSignEnveloped:
 
     def test_sign_enveloped_rejects_self_closing_root(self):
         # A self-closing root cannot host a signature child. Whitespace before
-        # the "/>" must be handled too (uppsala parses the span; we do not scan
-        # for the byte immediately before ">").
+        # the "/>" must be handled too.
         for doc in ('<root ID="X"/>', '<root ID="X" />'):
             with pytest.raises(pybergshamra.BergshamraError):
                 pybergshamra.sign_enveloped(self._ctx(), doc, reference_id="X")
 
     def test_sign_enveloped_empty_root_signs_before_end_tag(self):
-        # An empty (but not self-closing) root gets the signature inserted just
-        # before its end tag, producing valid, verifiable XML.
         doc = '<root ID="X"></root>'
         signed = pybergshamra.sign_enveloped(self._ctx(), doc, reference_id="X")
         assert signed.index("<ds:Signature") < signed.index("</root>")

@@ -65,10 +65,8 @@ manager.add_key(key)
 ctx = pybergshamra.DsigContext(manager)
 result = pybergshamra.verify(ctx, xml)
 
-if result and result.all_reference_digests_verified:
+if result:
     print("Valid!", result.key_info.algorithm)
-elif result:
-    print("Valid signature, but at least one reference needs out-of-band checking")
 else:
     print("Invalid:", result.reason)
 ```
@@ -180,10 +178,8 @@ each taking an allow-list of permitted algorithm URIs. The HSM operation classes
 | `EncContext(manager)` | Configuration for XML-Enc encrypt/decrypt |
 | `C14nMode` | Canonicalization mode (Inclusive, Exclusive, etc.) |
 | `VerifyResult` | Result of signature verification |
-| `verify(ctx, xml)` | Verify the first `<Signature>` in an XML document |
-| `verify_all(ctx, xml)` | Verify every `<Signature>` (e.g. multi-signature SAML) |
+| `verify(ctx, xml)` | Verify a signed XML document |
 | `sign(ctx, template)` | Sign an XML template |
-| `sign_enveloped(ctx, xml, ...)` | Build and sign an enveloped `<Signature>` in one step |
 | `encrypt(ctx, template, data)` | Encrypt data with an XML template |
 | `decrypt(ctx, xml)` | Decrypt an XML document |
 | `canonicalize(xml, mode)` | Canonicalize an XML document |
@@ -194,10 +190,12 @@ each taking an allow-list of permitted algorithm URIs. The HSM operation classes
 | `Pkcs11Signer` / `Pkcs11Verifier` | HSM-backed XML-DSig signing / verification |
 | `Pkcs11Decryptor` / `Pkcs11Encryptor` / `Pkcs11KeyWrapper` | HSM-backed XML-Enc key transport / key wrap |
 
-`DsigContext(manager)` is secure by default
-(`trusted_keys_only`, `strict_verification`, `hmac_min_out_len=160`). If you need
-standard W3C behaviour with inline `KeyInfo` extraction, opt out explicitly with
-keyword arguments, for example `DsigContext(manager, secure_defaults=False)`.
+`DsigContext(manager)` uses secure defaults (`trusted_keys_only`,
+`strict_verification`, `hmac_min_out_len=160`, and required local reference
+digests) recommended for federated identity. Use
+`DsigContext(manager, secure_defaults=False)` or
+`DsigContext.permissive(manager)` only when inline `KeyInfo` and relaxed
+structure checks are intentional.
 Each `VerifiedReference` now also reports `digest_verified` so callers can tell
 whether a reference's digest was actually checked.
 | `load_key_file(path)` | Load a key from file (auto-detect format) |
