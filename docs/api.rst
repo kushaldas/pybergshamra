@@ -1240,11 +1240,13 @@ VerifyResult
    .. code-block:: python
 
       result = pybergshamra.verify(ctx, xml)
-      if result:
+      if result and result.all_reference_digests_verified:
           print("Valid!")
           for ref in result.references:
               print(f"  Reference URI: {ref.uri}")
           print(f"  Key algorithm: {result.key_info.algorithm}")
+      elif result:
+          print("Signature valid, but not every Reference digest was verified locally")
       else:
           print(f"Invalid: {result.reason}")
 

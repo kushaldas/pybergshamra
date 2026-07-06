@@ -305,10 +305,10 @@ impl DsigContext {
             url_maps: Vec::new(),
             hmac_min_out_len: hmac_min_out_len.unwrap_or(rust_ctx.hmac_min_out_len),
             debug: rust_ctx.debug,
-            base_dir: rust_ctx.base_dir,
+            base_dir: rust_ctx.base_dir.clone(),
             insecure: rust_ctx.insecure,
             verify_keys: rust_ctx.verify_keys,
-            verification_time: rust_ctx.verification_time,
+            verification_time: rust_ctx.verification_time.clone(),
             skip_time_checks: rust_ctx.skip_time_checks,
             enabled_key_data_x509: rust_ctx.enabled_key_data_x509,
             trusted_keys_only: trusted_keys_only.unwrap_or(rust_ctx.trusted_keys_only),
@@ -793,25 +793,10 @@ fn pem_certificate_bodies(pem: &str) -> PyResult<Vec<String>> {
 
 /// Splice ``fragment`` in as the first child of the document's root element by
 /// inserting it immediately after the root element's opening tag. Uses uppsala
-/// (via bergshamra-xml) for both root location and start-tag byte offsets.
+/// (via bergshamra-xml) to find the document element and its start-tag offset
+/// in one parser pass.
 fn insert_first_child_of_root(xml: &str, fragment: &str) -> PyResult<String> {
-    let doc = bergshamra_xml::uppsala::parse(xml)
-        .map_err(|e| to_pyerr(bergshamra_core::Error::XmlParse(e.to_string())))?;
-    let root = doc.document_element().ok_or_else(|| {
-        to_pyerr(bergshamra_core::Error::XmlStructure(
-            "document has no root element to sign".to_string(),
-        ))
-    })?;
-    let range = doc.node_range(root).ok_or_else(|| {
-        to_pyerr(bergshamra_core::Error::XmlStructure(
-            "could not locate the root element".to_string(),
-        ))
-    })?;
-    let offset = root_start_tag_end(xml, range.start)?.ok_or_else(|| {
-        to_pyerr(bergshamra_core::Error::XmlStructure(
-            "cannot envelope-sign a self-closing root element".to_string(),
-        ))
-    })?;
+    let offset = root_start_tag_end(xml)?;
     let mut out = String::with_capacity(xml.len() + fragment.len());
     out.push_str(&xml[..offset]);
     out.push_str(fragment);
@@ -820,10 +805,9 @@ fn insert_first_child_of_root(xml: &str, fragment: &str) -> PyResult<String> {
 }
 
 /// Return the byte offset immediately after the document element's start tag.
-/// Returns ``None`` for a self-closing document element.
-fn root_start_tag_end(xml: &str, root_start: usize) -> PyResult<Option<usize>> {
+/// Rejects self-closing document elements because they cannot host children.
+fn root_start_tag_end(xml: &str) -> PyResult<usize> {
     let mut parser = bergshamra_xml::uppsala::PullParser::new(xml);
-    let mut start_tag_end = None;
 
     while let Some(event) = parser
         .next_event()
@@ -834,29 +818,28 @@ fn root_start_tag_end(xml: &str, root_start: usize) -> PyResult<Option<usize>> {
                 byte_start,
                 byte_end,
                 ..
-            } if byte_start == root_start => {
-                start_tag_end = Some(byte_end);
-            }
-            bergshamra_xml::uppsala::PullEvent::EndElement { byte_start, .. }
-                if start_tag_end.is_some() =>
-            {
-                if byte_start == root_start {
-                    return Ok(None);
+            } => {
+                let next = parser
+                    .next_event()
+                    .map_err(|e| to_pyerr(bergshamra_core::Error::XmlParse(e.to_string())))?;
+                if matches!(
+                    next,
+                    Some(bergshamra_xml::uppsala::PullEvent::EndElement {
+                        byte_start: end_start,
+                        ..
+                    }) if end_start == byte_start
+                ) {
+                    return Err(to_pyerr(bergshamra_core::Error::XmlStructure(
+                        "cannot envelope-sign a self-closing root element".to_string(),
+                    )));
                 }
-                return Ok(start_tag_end);
-            }
-            bergshamra_xml::uppsala::PullEvent::StartElement { .. }
-            | bergshamra_xml::uppsala::PullEvent::Text { .. }
-            | bergshamra_xml::uppsala::PullEvent::CData { .. }
-            | bergshamra_xml::uppsala::PullEvent::Comment { .. }
-            | bergshamra_xml::uppsala::PullEvent::ProcessingInstruction { .. }
-                if start_tag_end.is_some() =>
-            {
-                return Ok(start_tag_end);
+                return Ok(byte_end);
             }
             _ => {}
         }
     }
 
-    Ok(start_tag_end)
+    Err(to_pyerr(bergshamra_core::Error::XmlStructure(
+        "document has no root element to sign".to_string(),
+    )))
 }
