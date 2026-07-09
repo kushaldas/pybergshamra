@@ -1482,6 +1482,37 @@ class TestSignEnveloped:
         signed = pybergshamra.sign_enveloped(self._ctx(), self.DOC)
         assert pybergshamra.verify(self._verify_ctx(), signed).is_valid
 
+    def test_sign_and_verify_pyuppsala_document_in_place(self):
+        from pyuppsala import Document
+
+        document = Document(self.DOC)
+        result = pybergshamra.sign_enveloped_document(
+            self._ctx(), document, reference_id="ABC123"
+        )
+
+        assert result is None
+        signed = document.to_xml()
+        assert signed.index("<ds:Signature") < signed.index("<md:EntityDescriptor")
+        assert pybergshamra.sign_document(self._ctx(), document) is None
+        verification = pybergshamra.verify_document(self._verify_ctx(), document)
+        assert verification.is_valid
+        assert [reference.uri for reference in verification.references] == ["#ABC123"]
+        assert pybergshamra.verify(self._verify_ctx(), signed).is_valid
+
+    def test_verify_all_pyuppsala_document(self):
+        from pyuppsala import Document
+
+        document = Document(self.DOC)
+        pybergshamra.sign_enveloped_document(self._ctx(), document)
+
+        results = pybergshamra.verify_all_document(self._verify_ctx(), document)
+        assert len(results) == 1
+        assert results[0].is_valid
+
+    def test_document_api_rejects_non_pyuppsala_object(self):
+        with pytest.raises(TypeError, match="pyuppsala.Document"):
+            pybergshamra.verify_document(self._verify_ctx(), self.DOC)
+
     def test_sign_enveloped_tamper_detected(self):
         cert_pem = (RSA_DIR / "rsa-2048-cert.pem").read_text()
         signed = pybergshamra.sign_enveloped(

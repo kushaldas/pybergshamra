@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "pybergshamra"
-version = "0.7.0"
+version = "0.7.1"
 description = "Python bindings for Bergshamra XML Security (XML-DSig, XML-Enc, C14N)"
 requires-python = ">=3.10"
 license = "BSD-2-Clause"
@@ -20,14 +20,21 @@ classifiers = [
 [dependency-groups]
 dev = [
     "pytest>=8.0",
+    "pyuppsala>=0.9.1",
     "sphinx>=8.0",
     "furo",
 ]
+
+[tool.uv.sources]
+pyuppsala = { path = "../pyuppsala", editable = true }
 
 
 [project.urls]
 Documentation = "https://pybergshamra.readthedocs.org/"
 Repository = "https://github.com/kushaldas/pybergshamra"
+
+[project.optional-dependencies]
+documents = ["pyuppsala>=0.9.1"]
 
 [tool.maturin]
 features = ["pyo3/extension-module"]

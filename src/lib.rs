@@ -66,11 +66,15 @@ fn pybergshamra(m: &Bound<'_, PyModule>) -> PyResult<()> {
         m.py().get_type::<errors::CertificateError>(),
     )?;
 
-    // ── DSig functions ───────────────────────────────────────────────
+    // ── DSig string and native pyuppsala-document functions ─────────
     m.add_function(wrap_pyfunction!(dsig::verify, m)?)?;
+    m.add_function(wrap_pyfunction!(dsig::verify_document, m)?)?;
     m.add_function(wrap_pyfunction!(dsig::verify_all, m)?)?;
+    m.add_function(wrap_pyfunction!(dsig::verify_all_document, m)?)?;
     m.add_function(wrap_pyfunction!(dsig::sign, m)?)?;
+    m.add_function(wrap_pyfunction!(dsig::sign_document, m)?)?;
     m.add_function(wrap_pyfunction!(dsig::sign_enveloped, m)?)?;
+    m.add_function(wrap_pyfunction!(dsig::sign_enveloped_document, m)?)?;
 
     // ── Enc functions ────────────────────────────────────────────────
     m.add_function(wrap_pyfunction!(enc::encrypt, m)?)?;

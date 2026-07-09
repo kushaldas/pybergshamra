@@ -1,6 +1,21 @@
 # Changelog
 
 
+## Unreleased
+
+### Added
+
+- Added ``verify_document()``, ``verify_all_document()``, ``sign_document()``,
+  and ``sign_enveloped_document()`` for operating directly on a
+  ``pyuppsala.Document`` through its native document capsule.
+
+### Changed
+
+- Native document signing and verification release the Python GIL and avoid
+  serializing and reparsing the caller's Uppsala DOM on common same-document
+  XML-DSig paths.
+
+
 ## 0.7.0 [2026-07-06]
 
 ### Security
