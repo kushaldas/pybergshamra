@@ -38,7 +38,26 @@ Load an IdP certificate and verify. The common ID attribute names ``Id``,
 Sign an XML document (enveloped)
 --------------------------------
 
-Build a signature template with pyuppsala's ``XmlWriter`` and sign it:
+Sign an already-parsed pyuppsala document in place:
+
+.. code-block:: python
+
+    import pybergshamra
+    from pyuppsala import Document
+
+    document = Document('<Document ID="doc-1"><Data>Important</Data></Document>')
+    pybergshamra.sign_enveloped_document(
+        ctx,
+        document,
+        reference_id="doc-1",
+    )
+    assert pybergshamra.verify_document(verify_ctx, document)
+
+The document APIs share the existing native Uppsala DOM, avoiding the
+serialization and parse required by the string APIs.
+
+The lower-level string API remains available. Build a signature template with
+pyuppsala's ``XmlWriter`` and sign it:
 
 .. code-block:: python
 

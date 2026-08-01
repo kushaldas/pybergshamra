@@ -193,9 +193,15 @@ impl Key {
             .inner
             .lock()
             .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
-        Ok(guard
-            .x25519_public_key_bytes()
-            .map(|b| pyo3::types::PyBytes::new(py, b)))
+        if guard.data.algorithm() != kryptering::KeyAlgorithm::X25519 {
+            return Ok(None);
+        }
+        // Kryptering exports X25519 public components as historical raw bytes.
+        let bytes = guard
+            .data
+            .export_public()
+            .map_err(crate::errors::to_pyerr)?;
+        Ok(Some(pyo3::types::PyBytes::new(py, &bytes)))
     }
 
     /// Return the X25519 private key bytes (32 bytes), or None.
@@ -207,9 +213,14 @@ impl Key {
             .inner
             .lock()
             .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
-        Ok(guard
-            .x25519_private_key_bytes()
-            .map(|b| pyo3::types::PyBytes::new(py, b)))
+        if guard.data.algorithm() != kryptering::KeyAlgorithm::X25519 || !guard.has_private_key() {
+            return Ok(None);
+        }
+        let bytes = guard
+            .data
+            .export_private()
+            .map_err(crate::errors::to_pyerr)?;
+        Ok(Some(pyo3::types::PyBytes::new(py, &bytes)))
     }
 
     /// Return the KeyValue XML fragment, or None.

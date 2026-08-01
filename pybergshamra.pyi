@@ -2,7 +2,14 @@
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import Any, Optional, TypeAlias
+
+# The document-native APIs (``verify_document``, ``sign_document``, ...) accept
+# a ``pyuppsala.Document`` (pyuppsala >= 0.10.0). pyuppsala is an optional
+# dependency (the ``documents`` extra), so the stubs do not import it -- a hard
+# import would break type checking for installs without the extra. The alias
+# keeps the signatures readable while degrading to ``Any``.
+Document: TypeAlias = Any
 
 # Exceptions
 
@@ -609,6 +616,10 @@ def verify(ctx: DsigContext, xml: str) -> VerifyResult:
     """
     ...
 
+def verify_document(ctx: DsigContext, document: Document) -> VerifyResult:
+    """Verify the first signature directly in a pyuppsala Document."""
+    ...
+
 def verify_all(ctx: DsigContext, xml: str) -> list[VerifyResult]:
     """Verify every <Signature> element in the document.
 
@@ -624,12 +635,20 @@ def verify_all(ctx: DsigContext, xml: str) -> list[VerifyResult]:
     """
     ...
 
+def verify_all_document(ctx: DsigContext, document: Document) -> list[VerifyResult]:
+    """Verify every signature directly in a pyuppsala Document."""
+    ...
+
 def sign(ctx: DsigContext, template_xml: str) -> str:
     """Sign an XML template and return the signed XML string.
 
     The template must contain a ``<Signature>`` skeleton with
     ``<SignedInfo>``, ``<Reference>``, etc.
     """
+    ...
+
+def sign_document(ctx: DsigContext, document: Document) -> None:
+    """Sign an XML-DSig template in place in a pyuppsala Document."""
     ...
 
 def sign_enveloped(
@@ -661,6 +680,19 @@ def sign_enveloped(
     attribute, so do **not** also call :meth:`DsigContext.add_id_attr` with
     ``"ID"`` -- doing so double-registers it and raises a duplicate-ID error.
     """
+    ...
+
+def sign_enveloped_document(
+    ctx: DsigContext,
+    document: Document,
+    *,
+    reference_id: Optional[str] = None,
+    signature_method: Optional[str] = None,
+    digest_method: Optional[str] = None,
+    c14n_method: Optional[str] = None,
+    cert_pem: Optional[str] = None,
+) -> None:
+    """Build and sign an enveloped signature in place in a pyuppsala Document."""
     ...
 
 # Module-level functions — Enc

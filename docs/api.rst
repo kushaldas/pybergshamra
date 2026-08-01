@@ -1327,6 +1327,17 @@ verify and sign
    :raises XmlError: For document-level failures such as parse errors,
       duplicate-ID conflicts, or no ``<Signature>`` element.
 
+.. function:: verify_document(ctx: DsigContext, document: pyuppsala.Document) -> VerifyResult
+
+   Verify the first ``<Signature>`` directly against an already-parsed
+   ``pyuppsala.Document``. The document is shared with the native verifier,
+   avoiding serialization and reparsing.
+
+.. function:: verify_all_document(ctx: DsigContext, document: pyuppsala.Document) -> list[VerifyResult]
+
+   Verify every ``<Signature>`` directly against an already-parsed
+   ``pyuppsala.Document``.
+
 .. function:: sign(ctx: DsigContext, template_xml: str) -> str
 
    Sign an XML template and return the signed XML string. The template must
@@ -1343,6 +1354,12 @@ verify and sign
       signed_xml = pybergshamra.sign(ctx, template)
       print(signed_xml)
 
+.. function:: sign_document(ctx: DsigContext, document: pyuppsala.Document) -> None
+
+   Fill an existing XML-DSig template directly in ``document``. The document is
+   mutated in place and must contain empty ``DigestValue`` and
+   ``SignatureValue`` elements.
+
 .. function:: sign_enveloped(ctx: DsigContext, xml: str, *, reference_id: str | None = None, signature_method: str | None = None, digest_method: str | None = None, c14n_method: str | None = None, cert_pem: str | None = None) -> str
 
    Build an enveloped ``<ds:Signature>`` template, insert it into ``xml``, sign
@@ -1355,6 +1372,12 @@ verify and sign
       ``ds:X509Data``.
    :raises ValueError: If ``reference_id`` or ``cert_pem`` is malformed.
    :raises BergshamraError: If signing fails.
+
+.. function:: sign_enveloped_document(ctx: DsigContext, document: pyuppsala.Document, *, reference_id: str | None = None, signature_method: str | None = None, digest_method: str | None = None, c14n_method: str | None = None, cert_pem: str | None = None) -> None
+
+   Build and sign an enveloped ``<ds:Signature>`` directly in ``document``.
+   The document is mutated in place. The common enveloped-signature path does
+   not create a document-sized intermediate XML string.
 
 XML encryption
 --------------

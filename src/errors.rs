@@ -54,7 +54,7 @@ pub fn to_pyerr(e: Error) -> PyErr {
 pub fn kryptering_to_pyerr(e: kryptering::Error) -> PyErr {
     use kryptering::Error as K;
     match &e {
-        K::UnsupportedAlgorithm(_) => AlgorithmError::new_err(e.to_string()),
+        K::UnsupportedAlgorithm { .. } => AlgorithmError::new_err(e.to_string()),
         K::Key(_) => KeyLoadError::new_err(e.to_string()),
         _ => CryptoError::new_err(e.to_string()),
     }

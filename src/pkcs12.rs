@@ -51,7 +51,11 @@ impl Pkcs12Contents {
 pub fn parse_pkcs12(data: &[u8], password: &str) -> PyResult<Pkcs12Contents> {
     let contents = bergshamra_pkcs12::parse_pkcs12(data, password).map_err(to_pyerr)?;
     Ok(Pkcs12Contents {
-        private_keys: contents.private_keys,
+        private_keys: contents
+            .private_keys
+            .iter()
+            .map(|k| k.as_ref().to_vec())
+            .collect(),
         certificates: contents.certificates,
     })
 }

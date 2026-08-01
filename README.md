@@ -179,9 +179,13 @@ each taking an allow-list of permitted algorithm URIs. The HSM operation classes
 | `C14nMode` | Canonicalization mode (Inclusive, Exclusive, etc.) |
 | `VerifyResult` | Result of signature verification |
 | `verify(ctx, xml)` | Verify the first `<Signature>` in document order |
+| `verify_document(ctx, document)` | Verify a `pyuppsala.Document` without reparsing |
 | `verify_all(ctx, xml)` | Verify every `<Signature>` in document order |
+| `verify_all_document(ctx, document)` | Verify every signature in a `pyuppsala.Document` |
 | `sign(ctx, template)` | Sign an XML template |
+| `sign_document(ctx, document)` | Sign a template in a `pyuppsala.Document` in place |
 | `sign_enveloped(ctx, xml, ...)` | Build and sign an enveloped `<Signature>` in one step |
+| `sign_enveloped_document(ctx, document, ...)` | Build and sign in a `pyuppsala.Document` in place |
 | `encrypt(ctx, template, data)` | Encrypt data with an XML template |
 | `decrypt(ctx, xml)` | Decrypt an XML document |
 | `canonicalize(xml, mode)` | Canonicalize an XML document |
@@ -191,6 +195,10 @@ each taking an allow-list of permitted algorithm URIs. The HSM operation classes
 | `Pkcs11Provider` / `Pkcs11Session` | Load a PKCS#11 module and open a token session |
 | `Pkcs11Signer` / `Pkcs11Verifier` | HSM-backed XML-DSig signing / verification |
 | `Pkcs11Decryptor` / `Pkcs11Encryptor` / `Pkcs11KeyWrapper` | HSM-backed XML-Enc key transport / key wrap |
+
+The native ``*_document`` APIs require pyuppsala 0.10.0 or newer (the zero-copy
+document capsule, ABI v2). Install both
+packages with ``pip install 'pybergshamra[documents]'``.
 
 `DsigContext(manager)` uses secure defaults (`trusted_keys_only`,
 `strict_verification`, `hmac_min_out_len=160`, and required local reference
