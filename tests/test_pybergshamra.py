@@ -1483,7 +1483,9 @@ class TestSignEnveloped:
         assert pybergshamra.verify(self._verify_ctx(), signed).is_valid
 
     def test_sign_and_verify_pyuppsala_document_in_place(self):
-        from pyuppsala import Document
+        # Document-interop tests need the optional pyuppsala peer (>= 0.10.0
+        # for the v2 capsule ABI); skip cleanly where it is not installed.
+        Document = pytest.importorskip("pyuppsala").Document
 
         document = Document(self.DOC)
         result = pybergshamra.sign_enveloped_document(
@@ -1500,7 +1502,9 @@ class TestSignEnveloped:
         assert pybergshamra.verify(self._verify_ctx(), signed).is_valid
 
     def test_verify_all_pyuppsala_document(self):
-        from pyuppsala import Document
+        # Document-interop tests need the optional pyuppsala peer (>= 0.10.0
+        # for the v2 capsule ABI); skip cleanly where it is not installed.
+        Document = pytest.importorskip("pyuppsala").Document
 
         document = Document(self.DOC)
         pybergshamra.sign_enveloped_document(self._ctx(), document)
