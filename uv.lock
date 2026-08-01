@@ -356,7 +356,7 @@ wheels = [
 
 [[package]]
 name = "pybergshamra"
-version = "0.7.1"
+version = "0.8.0"
 source = { editable = "." }
 
 [package.optional-dependencies]
@@ -415,7 +415,7 @@ wheels = [
 
 [[package]]
 name = "pyuppsala"
-version = "0.9.1"
+version = "0.10.0"
 source = { editable = "../pyuppsala" }
 
 [package.metadata]

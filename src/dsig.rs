@@ -609,7 +609,7 @@ pub fn verify_document(
     let result = py
         .detach(move || {
             let guard = shared.lock().map_err(document_lock_error)?;
-            bergshamra_dsig::verify::verify_document(&rust_ctx, &guard.doc)
+            bergshamra_dsig::verify::verify_document(&rust_ctx, guard.doc())
         })
         .map_err(to_pyerr)?;
     Ok(VerifyResult::from(result))
@@ -647,7 +647,7 @@ pub fn verify_all_document(
     let results = py
         .detach(move || {
             let guard = shared.lock().map_err(document_lock_error)?;
-            bergshamra_dsig::verify::verify_all_document(&rust_ctx, &guard.doc)
+            bergshamra_dsig::verify::verify_all_document(&rust_ctx, guard.doc())
         })
         .map_err(to_pyerr)?;
     Ok(results.into_iter().map(VerifyResult::from).collect())
@@ -677,7 +677,7 @@ pub fn sign_document(
     let rust_ctx = ctx.to_rust()?;
     py.detach(move || {
         let mut guard = shared.lock().map_err(document_lock_error)?;
-        bergshamra_dsig::sign::sign_document(&rust_ctx, &mut guard.doc)
+        guard.with_doc_mut(|_input, doc| bergshamra_dsig::sign::sign_document(&rust_ctx, doc))
     })
     .map_err(to_pyerr)
 }
@@ -816,7 +816,9 @@ pub fn sign_enveloped_document(
             &c14n_method,
             Some(&key_info),
         );
-        bergshamra_dsig::sign::sign_enveloped_document(&rust_ctx, &mut guard.doc, options)
+        guard.with_doc_mut(|_input, doc| {
+            bergshamra_dsig::sign::sign_enveloped_document(&rust_ctx, doc, options)
+        })
     })
     .map_err(to_pyerr)
 }

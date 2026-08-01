@@ -107,8 +107,9 @@ pub fn load_x509_cert_der(data: &[u8]) -> PyResult<Key> {
 
 /// Create an HMAC key from raw bytes.
 #[pyfunction]
-pub fn load_hmac_key(data: &[u8]) -> Key {
-    Key::from_rust(loader::load_hmac_key(data))
+pub fn load_hmac_key(data: &[u8]) -> PyResult<Key> {
+    let key = loader::load_hmac_key(data).map_err(to_pyerr)?;
+    Ok(Key::from_rust(key))
 }
 
 /// Create an AES key from raw bytes.

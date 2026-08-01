@@ -1,7 +1,26 @@
 # Changelog
 
 
-## Unreleased
+## 0.8.0 [2026-08-02]
+
+### Changed
+
+- Updated all `bergshamra` crates `0.7.1` -> `0.8.0` and `kryptering`
+  `0.4.1` -> `0.5.0`. Document cryptography now goes through Kryptering's
+  selectable provider layer; this build keeps the RustCrypto-based defaults
+  (`rustcrypto`, `legacy-algorithms`, `post-quantum`, `pkcs11`).
+- MSRV raised to Rust 1.88 (bergshamra 0.8.0 requirement).
+- `load_hmac_key()` can now raise `KeyLoadError` if the selected crypto
+  provider rejects the key import (previously it could not fail).
+- `Key.x25519_public_key_bytes()` / `Key.x25519_private_key_bytes()` are now
+  exported through the provider key handle and can raise `KeyLoadError` on
+  provider export failure; the returned raw 32-byte values are unchanged.
+- Updated `pyuppsala-interop` `0.1.0` -> `0.2.0` for pyuppsala 0.10.0's
+  zero-copy document capsule (ABI v2). The document-native functions
+  (`verify_document()`, `sign_document()`, `sign_enveloped_document()`, ...)
+  now require documents from pyuppsala >= 0.10.0; v1 capsules from older
+  pyuppsala builds are rejected with a clear ABI error. Signing works
+  in place on zero-copy documents with no extra conversion.
 
 ### Added
 
