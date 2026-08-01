@@ -375,14 +375,14 @@ dev = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "pyuppsala", marker = "extra == 'documents'", editable = "../pyuppsala" }]
+requires-dist = [{ name = "pyuppsala", marker = "extra == 'documents'", specifier = ">=0.10.0" }]
 provides-extras = ["documents"]
 
 [package.metadata.requires-dev]
 dev = [
     { name = "furo" },
     { name = "pytest", specifier = ">=8.0" },
-    { name = "pyuppsala", editable = "../pyuppsala" },
+    { name = "pyuppsala", specifier = ">=0.10.0" },
     { name = "sphinx", specifier = ">=8.0" },
 ]
 
@@ -416,17 +416,13 @@ wheels = [
 [[package]]
 name = "pyuppsala"
 version = "0.10.0"
-source = { editable = "../pyuppsala" }
-
-[package.metadata]
-
-[package.metadata.requires-dev]
-dev = [
-    { name = "furo" },
-    { name = "lxml", specifier = ">=5.0" },
-    { name = "maturin", specifier = ">=1.0,<2.0" },
-    { name = "pytest", specifier = ">=8.0" },
-    { name = "sphinx", specifier = ">=8.0" },
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/b9/91/345516ca44b3dade136dd569ab2d540423508f7a0164d339e1e01fcfba32/pyuppsala-0.10.0.tar.gz", hash = "sha256:bcc0f4f1a78e200399c909bdc87ff13fbbec2899ecc57e83ad8950aa311b0e9c", size = 248512, upload-time = "2026-08-01T16:54:12.751Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/cd/c9/bb852fae47ce1cbcad9b7e95448f7d9e082a0c5c205148cea9788d08d5ba/pyuppsala-0.10.0-cp310-abi3-macosx_11_0_arm64.whl", hash = "sha256:ec3a4de49fd0fbe22ed99f4d6882a360963b8c104c6e7d7e6461b027dcfd444e", size = 1713065, upload-time = "2026-08-01T16:54:06.605Z" },
+    { url = "https://files.pythonhosted.org/packages/1a/08/eee11d6147123d0ecd1338cfd8350e1305c6a3c96f072af734cebebcfa9d/pyuppsala-0.10.0-cp310-abi3-manylinux_2_28_x86_64.whl", hash = "sha256:4c0f5b426a14f1d08f3729e562170e3f2c5c6551d7cbf145156094e05bfb7fbc", size = 1895185, upload-time = "2026-08-01T16:54:08.471Z" },
+    { url = "https://files.pythonhosted.org/packages/6b/63/3e8918ceef0c9c40cf534a4dca8962ee72aecd0daa583b96577c74524eb5/pyuppsala-0.10.0-cp310-abi3-win_amd64.whl", hash = "sha256:a296a2dca083f16db21e2b054841b40fd53d8703ac0a2961d786368f66de25a2", size = 1861014, upload-time = "2026-08-01T16:54:10.105Z" },
+    { url = "https://files.pythonhosted.org/packages/11/c2/6acd3400332929d4343a0a3d0d8d68d9a76256e4c51b699f31ad2ca027ff/pyuppsala-0.10.0-cp310-abi3-win_arm64.whl", hash = "sha256:08a62e362a2bd59b80e83b2af9eb0d4533d8713b07603e3bea64683e72d84bb4", size = 1771321, upload-time = "2026-08-01T16:54:11.396Z" },
 ]
 
 [[package]]

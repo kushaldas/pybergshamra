@@ -2,9 +2,14 @@
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import Any, Optional, TypeAlias
 
-from pyuppsala import Document
+# The document-native APIs (``verify_document``, ``sign_document``, ...) accept
+# a ``pyuppsala.Document`` (pyuppsala >= 0.10.0). pyuppsala is an optional
+# dependency (the ``documents`` extra), so the stubs do not import it -- a hard
+# import would break type checking for installs without the extra. The alias
+# keeps the signatures readable while degrading to ``Any``.
+Document: TypeAlias = Any
 
 # Exceptions
 

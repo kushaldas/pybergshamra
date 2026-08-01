@@ -20,21 +20,17 @@ classifiers = [
 [dependency-groups]
 dev = [
     "pytest>=8.0",
-    "pyuppsala>=0.9.1",
+    "pyuppsala>=0.10.0",
     "sphinx>=8.0",
     "furo",
 ]
-
-[tool.uv.sources]
-pyuppsala = { path = "../pyuppsala", editable = true }
-
 
 [project.urls]
 Documentation = "https://pybergshamra.readthedocs.org/"
 Repository = "https://github.com/kushaldas/pybergshamra"
 
 [project.optional-dependencies]
-documents = ["pyuppsala>=0.9.1"]
+documents = ["pyuppsala>=0.10.0"]
 
 [tool.maturin]
 features = ["pyo3/extension-module"]

@@ -196,7 +196,8 @@ each taking an allow-list of permitted algorithm URIs. The HSM operation classes
 | `Pkcs11Signer` / `Pkcs11Verifier` | HSM-backed XML-DSig signing / verification |
 | `Pkcs11Decryptor` / `Pkcs11Encryptor` / `Pkcs11KeyWrapper` | HSM-backed XML-Enc key transport / key wrap |
 
-The native ``*_document`` APIs require pyuppsala 0.9.1 or newer. Install both
+The native ``*_document`` APIs require pyuppsala 0.10.0 or newer (the zero-copy
+document capsule, ABI v2). Install both
 packages with ``pip install 'pybergshamra[documents]'``.
 
 `DsigContext(manager)` uses secure defaults (`trusted_keys_only`,

@@ -569,9 +569,15 @@ fn shared_document(document: &Bound<'_, PyAny>) -> PyResult<SharedDoc> {
     // capsule remains alive until after the `Arc` clone below.
     let payload = unsafe { pointer.as_ref() };
     if payload.abi != DOCUMENT_CAPSULE_ABI {
-        return Err(PyRuntimeError::new_err(format!(
-            "unsupported pyuppsala document capsule ABI {}; expected {}",
-            payload.abi, DOCUMENT_CAPSULE_ABI
+        // A wrong-ABI capsule is an incompatible input type (pyuppsala build
+        // too old/new), not a runtime fault: raise TypeError like other
+        // non-document inputs so callers can handle both the same way.
+        return Err(PyTypeError::new_err(format!(
+            "unsupported pyuppsala document capsule ABI {}; expected {} \
+             (pybergshamra {} requires pyuppsala >= 0.10.0)",
+            payload.abi,
+            DOCUMENT_CAPSULE_ABI,
+            env!("CARGO_PKG_VERSION"),
         )));
     }
     Ok(payload.shared.clone())
