@@ -1681,7 +1681,22 @@ does not encode the curve. Wire an operation into a context with
 
 .. class:: Pkcs11Provider(library_path: str)
 
-   A loaded PKCS#11 module bound to the first slot that has a token present.
+   Load a PKCS#11 module and bind to its only initialized token. This constructor
+   fails when multiple initialized tokens are visible; use one of the explicit
+   selectors below in multi-token deployments.
+
+   .. staticmethod:: with_token(library_path: str, token_label: str, token_serial: str | None = None) -> Pkcs11Provider
+
+      Load a module and bind to the unique initialized token matching
+      ``token_label`` and, when supplied, ``token_serial``.
+
+   .. staticmethod:: with_slot_id(library_path: str, slot_id: int) -> Pkcs11Provider
+
+      Load a module and bind to a specific initialized PKCS#11 slot ID.
+
+   .. attribute:: slot_id
+
+      The selected PKCS#11 slot ID as an integer. This attribute is read-only.
 
    .. method:: open_session(pin: str) -> Pkcs11Session
 
@@ -1731,7 +1746,11 @@ does not encode the curve. Wire an operation into a context with
    import pybergshamra
    from pybergshamra import Algorithm
 
-   provider = pybergshamra.Pkcs11Provider("/usr/lib/softhsm/libsofthsm2.so")
+   provider = pybergshamra.Pkcs11Provider.with_token(
+       "/usr/lib/softhsm/libsofthsm2.so",
+       "production-signing-token",
+       token_serial="11429933786539",
+   )
    session = provider.open_session("1234")
 
    manager = pybergshamra.KeysManager()

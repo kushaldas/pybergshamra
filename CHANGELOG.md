@@ -1,6 +1,20 @@
 # Changelog
 
 
+## 0.8.1 [2026-09-01]
+
+### Added
+
+- Added ``Pkcs11Provider.with_token()`` for selecting a unique initialized
+  PKCS#11 token by label and optional serial number in multi-token deployments.
+- Added ``Pkcs11Provider.with_slot_id()`` for selecting a specific initialized
+  PKCS#11 slot and the read-only ``Pkcs11Provider.slot_id`` property for
+  inspecting the selected slot.
+- Expanded the SoftHSM2 integration setup to provision two initialized tokens
+  and test fail-closed default selection, token-label/serial selection, and
+  explicit slot-ID selection.
+
+
 ## 0.8.0 [2026-08-02]
 
 ### Changed

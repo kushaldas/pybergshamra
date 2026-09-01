@@ -48,6 +48,10 @@ mkdir -p "$TOKEN_DIR"
 
 softhsm2-util --init-token --slot 0 --label "pybergshamra-test" --pin 1234 --so-pin 5678
 
+# Provision a second initialized token so the provider tests exercise explicit
+# token/slot selection instead of relying on a single visible slot.
+softhsm2-util --init-token --free --label "pybergshamra-decoy" --pin 4321 --so-pin 8765
+
 # RSA 2048 key pair (signing + key transport)
 pkcs11-tool --module "$MODULE" \
     --login --pin 1234 --token-label "pybergshamra-test" \
@@ -79,6 +83,7 @@ pkcs11-tool --module "$MODULE" \
 echo ""
 echo "SoftHSM2 test token initialized:"
 echo "  Token:    pybergshamra-test   (PIN 1234)"
+echo "  Decoy:    pybergshamra-decoy  (PIN 4321)"
 echo "  RSA-2048: test-rsa-key  (id 01)  sign/verify"
 echo "  RSA-2048: test-rsa-enc  (id 07)  decrypt (RSA-OAEP)"
 echo "  EC P-256: test-ec-key   (id 02)"

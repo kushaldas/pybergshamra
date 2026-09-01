@@ -993,9 +993,23 @@ def parse_pkcs12(data: bytes, password: str) -> Pkcs12Contents:
 # ``ec_curve`` because the URI does not encode the curve.
 
 class Pkcs11Provider:
-    """A loaded PKCS#11 module bound to the first slot with a token present."""
+    """A loaded PKCS#11 module backed by one selected token slot."""
 
     def __init__(self, library_path: str) -> None: ...
+    @staticmethod
+    def with_token(
+        library_path: str, token_label: str, token_serial: Optional[str] = None
+    ) -> Pkcs11Provider:
+        """Load a module and select a unique initialized token by label and optional serial."""
+        ...
+    @staticmethod
+    def with_slot_id(library_path: str, slot_id: int) -> Pkcs11Provider:
+        """Load a module and select a specific initialized PKCS#11 slot ID."""
+        ...
+    @property
+    def slot_id(self) -> int:
+        """The selected PKCS#11 slot ID."""
+        ...
     def open_session(self, pin: str) -> Pkcs11Session:
         """Open an authenticated read/write session using a UTF-8 user PIN."""
         ...

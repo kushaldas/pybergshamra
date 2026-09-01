@@ -6,7 +6,10 @@
 //!
 //! Typical flow:
 //! ```python
-//! provider = pybergshamra.Pkcs11Provider("/usr/lib/softhsm/libsofthsm2.so")
+//! provider = pybergshamra.Pkcs11Provider.with_token(
+//!     "/usr/lib/softhsm/libsofthsm2.so",
+//!     "my-token",
+//! )
 //! session = provider.open_session("1234")            # user PIN
 //! signer = pybergshamra.Pkcs11Signer(session, "my-rsa-key", Algorithm.RSA_SHA256)
 //! ctx = pybergshamra.DsigContext(manager)
@@ -229,12 +232,46 @@ pub struct Pkcs11Provider {
 #[pymethods]
 impl Pkcs11Provider {
     /// Load a PKCS#11 shared library (e.g. SoftHSM2's `libsofthsm2.so`) and
-    /// bind to the first slot that has a token present.
+    /// bind to its only initialized token slot.
+    ///
+    /// This constructor fails closed when multiple initialized token slots are
+    /// visible. Use `with_token()` or `with_slot_id()` to select one explicitly.
     #[new]
     fn new(library_path: &str) -> PyResult<Self> {
         let inner =
             RustPkcs11Provider::new(Path::new(library_path)).map_err(kryptering_to_pyerr)?;
         Ok(Self { inner })
+    }
+
+    /// Load a PKCS#11 shared library and bind to the initialized token matching
+    /// `token_label` and, when supplied, `token_serial`.
+    ///
+    /// Selection fails when no token matches or when the selector is ambiguous.
+    #[staticmethod]
+    #[pyo3(signature = (library_path, token_label, token_serial=None))]
+    fn with_token(
+        library_path: &str,
+        token_label: &str,
+        token_serial: Option<&str>,
+    ) -> PyResult<Self> {
+        let inner =
+            RustPkcs11Provider::new_with_token(Path::new(library_path), token_label, token_serial)
+                .map_err(kryptering_to_pyerr)?;
+        Ok(Self { inner })
+    }
+
+    /// Load a PKCS#11 shared library and bind to a specific initialized slot ID.
+    #[staticmethod]
+    fn with_slot_id(library_path: &str, slot_id: u64) -> PyResult<Self> {
+        let inner = RustPkcs11Provider::new_with_slot_id(Path::new(library_path), slot_id)
+            .map_err(kryptering_to_pyerr)?;
+        Ok(Self { inner })
+    }
+
+    /// Return the PKCS#11 slot ID selected by this provider.
+    #[getter]
+    fn slot_id(&self) -> u64 {
+        self.inner.slot_id()
     }
 
     /// Open an authenticated read/write session using a UTF-8 user PIN.
