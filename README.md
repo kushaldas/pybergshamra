@@ -136,7 +136,11 @@ needs an `ec_curve` because the URI does not encode the curve.
 import pybergshamra
 from pybergshamra import Algorithm
 
-provider = pybergshamra.Pkcs11Provider("/usr/lib/softhsm/libsofthsm2.so")
+provider = pybergshamra.Pkcs11Provider.with_token(
+    "/usr/lib/softhsm/libsofthsm2.so",
+    "production-signing-token",
+    token_serial="11429933786539",  # optional when the label is unique
+)
 session = provider.open_session("1234")  # user PIN
 
 # Sign an XML template with an RSA key on the token
@@ -154,6 +158,11 @@ verify_ctx.set_hsm_verifier(
 )
 assert bool(pybergshamra.verify(verify_ctx, signed_xml))
 ```
+
+Use `Pkcs11Provider.with_slot_id(module, slot_id)` when the deployment pins
+slots directly. The plain `Pkcs11Provider(module)` constructor remains
+available for single-token deployments and fails closed if multiple initialized
+tokens are visible. `provider.slot_id` reports the selected slot.
 
 `EncContext` exposes the same idea for encryption via `set_hsm_decryptor()`,
 `set_hsm_key_unwrapper()`, `set_hsm_encryptor()`, and `set_hsm_key_wrapper()`,

@@ -49,7 +49,7 @@ pytestmark = pytest.mark.skipif(
 
 @pytest.fixture(scope="module")
 def session():
-    provider = pybergshamra.Pkcs11Provider(_LIB)
+    provider = pybergshamra.Pkcs11Provider.with_token(_LIB, "pybergshamra-test")
     return provider.open_session(PIN)
 
 
@@ -60,18 +60,43 @@ def session():
 
 class TestProvider:
     def test_open_session(self):
-        provider = pybergshamra.Pkcs11Provider(_LIB)
+        provider = pybergshamra.Pkcs11Provider.with_token(_LIB, "pybergshamra-test")
         sess = provider.open_session(PIN)
         assert sess is not None
 
     def test_wrong_pin_fails(self):
-        provider = pybergshamra.Pkcs11Provider(_LIB)
+        provider = pybergshamra.Pkcs11Provider.with_token(_LIB, "pybergshamra-test")
         with pytest.raises(Exception):
             provider.open_session("0000")
 
     def test_missing_module_fails(self):
         with pytest.raises(Exception):
             pybergshamra.Pkcs11Provider("/nonexistent/libsofthsm2.so")
+
+    def test_default_provider_rejects_multiple_initialized_tokens(self):
+        with pytest.raises(Exception, match="multiple initialized token slots"):
+            pybergshamra.Pkcs11Provider(_LIB)
+
+    def test_select_token_by_label(self):
+        provider = pybergshamra.Pkcs11Provider.with_token(_LIB, "pybergshamra-test")
+        assert provider.slot_id >= 0
+        assert provider.open_session(PIN) is not None
+
+    def test_select_token_by_label_and_wrong_serial_fails(self):
+        with pytest.raises(Exception, match="no initialized token matches"):
+            pybergshamra.Pkcs11Provider.with_token(
+                _LIB, "pybergshamra-test", token_serial="not-the-token-serial"
+            )
+
+    def test_select_token_by_slot_id(self):
+        selected = pybergshamra.Pkcs11Provider.with_token(_LIB, "pybergshamra-test")
+        provider = pybergshamra.Pkcs11Provider.with_slot_id(_LIB, selected.slot_id)
+        assert provider.slot_id == selected.slot_id
+        assert provider.open_session(PIN) is not None
+
+    def test_unknown_token_label_fails(self):
+        with pytest.raises(Exception, match="no initialized token matches"):
+            pybergshamra.Pkcs11Provider.with_token(_LIB, "no-such-token")
 
 
 # ---------------------------------------------------------------------------
