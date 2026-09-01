@@ -9,6 +9,7 @@ The CI ``hsm`` job runs that setup before invoking pytest; locally:
 """
 
 import os
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -38,6 +39,29 @@ def _softhsm_lib():
     return None
 
 
+def _softhsm_token_serial(token_label):
+    """Return a provisioned SoftHSM token's serial without normalizing it."""
+    result = subprocess.run(
+        ["softhsm2-util", "--show-slots"],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    serial = None
+    for raw_line in result.stdout.splitlines():
+        line = raw_line.strip()
+        if line.startswith("Serial number:"):
+            serial = line.partition(":")[2].strip()
+        elif line.startswith("Label:"):
+            label = line.partition(":")[2].strip()
+            if label == token_label:
+                if not serial:
+                    raise RuntimeError(f"SoftHSM token {token_label!r} has no serial number")
+                return serial
+            serial = None
+    raise RuntimeError(f"SoftHSM token {token_label!r} was not found")
+
+
 _LIB = _softhsm_lib()
 _TOKEN_READY = _LIB is not None and os.environ.get("SOFTHSM2_CONF") is not None
 
@@ -51,6 +75,11 @@ pytestmark = pytest.mark.skipif(
 def session():
     provider = pybergshamra.Pkcs11Provider.with_token(_LIB, "pybergshamra-test")
     return provider.open_session(PIN)
+
+
+@pytest.fixture(scope="module")
+def token_serial():
+    return _softhsm_token_serial("pybergshamra-test")
 
 
 # ---------------------------------------------------------------------------
@@ -80,6 +109,12 @@ class TestProvider:
     def test_select_token_by_label(self):
         provider = pybergshamra.Pkcs11Provider.with_token(_LIB, "pybergshamra-test")
         assert provider.slot_id >= 0
+        assert provider.open_session(PIN) is not None
+
+    def test_select_token_by_label_and_serial(self, token_serial):
+        provider = pybergshamra.Pkcs11Provider.with_token(
+            _LIB, "pybergshamra-test", token_serial=token_serial
+        )
         assert provider.open_session(PIN) is not None
 
     def test_select_token_by_label_and_wrong_serial_fails(self):
