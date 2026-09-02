@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.9.0 [2026-09-02]
+
+### Security
+
+- Removed direct access to Rust-owned pyuppsala DOM data through a cross-shared-
+  library capsule. The capsule could outlive the extension code that created
+  its Rust values and caused downstream segmentation faults.
+
+### Changed
+
+- Updated all `bergshamra` crates 0.8.0 -> 0.9.0 and Uppsala to 0.10.1.
+- Removed the `pyuppsala-interop` dependency. The `*_document()` APIs retain
+  their Python signatures but now exchange owned XML strings: verification
+  serializes and reparses, while successful signing reparses and safely imports
+  the replacement tree into the existing pyuppsala document arena.
+- Document APIs now require pyuppsala 0.11.0 or newer.
+- Document APIs use DOCTYPE-inclusive serialization so signing does not discard
+  preserved document metadata.
+
 
 ## 0.8.1 [2026-09-01]
 
