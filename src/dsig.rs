@@ -557,13 +557,17 @@ fn document_xml(document: &Bound<'_, PyAny>) -> PyResult<String> {
         })
 }
 
-/// Replace a pyuppsala document using owned XML after successful signing.
-fn replace_document(document: &Bound<'_, PyAny>, xml: &str) -> PyResult<()> {
-    let replace_xml = document.getattr("_replace_xml").map_err(|_| {
+/// Resolve pyuppsala's owned-XML replacement hook before starting a signer.
+fn document_replace_hook<'py>(document: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
+    document.getattr("_replace_xml").map_err(|_| {
         PyTypeError::new_err(
             "document must be a pyuppsala.Document with owned XML replacement support",
         )
-    })?;
+    })
+}
+
+/// Replace a pyuppsala document using owned XML after successful signing.
+fn replace_document(replace_xml: &Bound<'_, PyAny>, xml: &str) -> PyResult<()> {
     replace_xml.call1((xml,))?;
     Ok(())
 }
@@ -583,9 +587,17 @@ pub fn verify(ctx: &DsigContext, xml: &str) -> PyResult<VerifyResult> {
 
 /// Verify the first `<Signature>` in a pyuppsala Document through owned XML.
 #[pyfunction]
-pub fn verify_document(ctx: &DsigContext, document: &Bound<'_, PyAny>) -> PyResult<VerifyResult> {
+pub fn verify_document(
+    py: Python<'_>,
+    ctx: &DsigContext,
+    document: &Bound<'_, PyAny>,
+) -> PyResult<VerifyResult> {
     let xml = document_xml(document)?;
-    verify(ctx, &xml)
+    let rust_ctx = ctx.to_rust()?;
+    let result = py
+        .detach(move || bergshamra_dsig::verify::verify(&rust_ctx, &xml))
+        .map_err(to_pyerr)?;
+    Ok(VerifyResult::from(result))
 }
 
 /// Verify **every** `<Signature>` element in the document, returning one
@@ -611,11 +623,16 @@ pub fn verify_all(ctx: &DsigContext, xml: &str) -> PyResult<Vec<VerifyResult>> {
 /// Verify every `<Signature>` in a pyuppsala Document through owned XML.
 #[pyfunction]
 pub fn verify_all_document(
+    py: Python<'_>,
     ctx: &DsigContext,
     document: &Bound<'_, PyAny>,
 ) -> PyResult<Vec<VerifyResult>> {
     let xml = document_xml(document)?;
-    verify_all(ctx, &xml)
+    let rust_ctx = ctx.to_rust()?;
+    let results = py
+        .detach(move || bergshamra_dsig::verify::verify_all(&rust_ctx, &xml))
+        .map_err(to_pyerr)?;
+    Ok(results.into_iter().map(VerifyResult::from).collect())
 }
 
 /// Sign an XML template and return the signed XML string.
@@ -633,10 +650,18 @@ pub fn sign(ctx: &DsigContext, template_xml: &str) -> PyResult<String> {
 /// The document is mutated in place and must already contain empty
 /// `<DigestValue>` and `<SignatureValue>` elements.
 #[pyfunction]
-pub fn sign_document(ctx: &DsigContext, document: &Bound<'_, PyAny>) -> PyResult<()> {
+pub fn sign_document(
+    py: Python<'_>,
+    ctx: &DsigContext,
+    document: &Bound<'_, PyAny>,
+) -> PyResult<()> {
     let xml = document_xml(document)?;
-    let signed = sign(ctx, &xml)?;
-    replace_document(document, &signed)
+    let replace_xml = document_replace_hook(document)?;
+    let rust_ctx = ctx.to_rust()?;
+    let signed = py
+        .detach(move || bergshamra_dsig::sign::sign(&rust_ctx, &xml))
+        .map_err(to_pyerr)?;
+    replace_document(&replace_xml, &signed)
 }
 
 /// Build an enveloped `<ds:Signature>` and sign ``xml`` in one step.
@@ -670,6 +695,28 @@ pub fn sign_document(ctx: &DsigContext, document: &Bound<'_, PyAny>) -> PyResult
 #[allow(clippy::too_many_arguments)]
 pub fn sign_enveloped(
     ctx: &DsigContext,
+    xml: &str,
+    reference_id: Option<&str>,
+    signature_method: Option<&str>,
+    digest_method: Option<&str>,
+    c14n_method: Option<&str>,
+    cert_pem: Option<&str>,
+) -> PyResult<String> {
+    let rust_ctx = ctx.to_rust()?;
+    sign_enveloped_with_context(
+        &rust_ctx,
+        xml,
+        reference_id,
+        signature_method,
+        digest_method,
+        c14n_method,
+        cert_pem,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn sign_enveloped_with_context(
+    ctx: &RustDsigContext,
     xml: &str,
     reference_id: Option<&str>,
     signature_method: Option<&str>,
@@ -720,8 +767,7 @@ pub fn sign_enveloped(
     );
 
     let template = insert_first_child_of_root(xml, &signature)?;
-    let rust_ctx = ctx.to_rust()?;
-    bergshamra_dsig::sign::sign_owned(&rust_ctx, template).map_err(to_pyerr)
+    bergshamra_dsig::sign::sign_owned(ctx, template).map_err(to_pyerr)
 }
 
 /// Build and sign an enveloped signature in a pyuppsala Document via owned XML.
@@ -729,6 +775,7 @@ pub fn sign_enveloped(
 #[pyo3(signature = (ctx, document, *, reference_id=None, signature_method=None, digest_method=None, c14n_method=None, cert_pem=None))]
 #[allow(clippy::too_many_arguments)]
 pub fn sign_enveloped_document(
+    py: Python<'_>,
     ctx: &DsigContext,
     document: &Bound<'_, PyAny>,
     reference_id: Option<&str>,
@@ -738,16 +785,28 @@ pub fn sign_enveloped_document(
     cert_pem: Option<&str>,
 ) -> PyResult<()> {
     let xml = document_xml(document)?;
-    let signed = sign_enveloped(
-        ctx,
-        &xml,
-        reference_id,
-        signature_method,
-        digest_method,
-        c14n_method,
-        cert_pem,
-    )?;
-    replace_document(document, &signed)
+    let replace_xml = document_replace_hook(document)?;
+    let rust_ctx = ctx.to_rust()?;
+
+    // Python strings may be borrowed by the `&str` arguments, so own every
+    // value that crosses the detached boundary.
+    let reference_id = reference_id.map(str::to_owned);
+    let signature_method = signature_method.map(str::to_owned);
+    let digest_method = digest_method.map(str::to_owned);
+    let c14n_method = c14n_method.map(str::to_owned);
+    let cert_pem = cert_pem.map(str::to_owned);
+    let signed = py.detach(move || {
+        sign_enveloped_with_context(
+            &rust_ctx,
+            &xml,
+            reference_id.as_deref(),
+            signature_method.as_deref(),
+            digest_method.as_deref(),
+            c14n_method.as_deref(),
+            cert_pem.as_deref(),
+        )
+    })?;
+    replace_document(&replace_xml, &signed)
 }
 
 fn validate_signature_method(uri: &str) -> PyResult<&str> {

@@ -1547,6 +1547,21 @@ class TestSignEnveloped:
         with pytest.raises(TypeError, match="pyuppsala.Document"):
             pybergshamra.verify_document(self._verify_ctx(), self.DOC)
 
+    @pytest.mark.parametrize(
+        "signer",
+        [pybergshamra.sign_document, pybergshamra.sign_enveloped_document],
+    )
+    def test_document_signers_preflight_owned_xml_replacement(self, signer):
+        class DocumentWithoutReplacement:
+            def to_xml_with_options(self, *, include_doctype):
+                assert include_doctype is True
+                return "not XML"
+
+        # The missing hook must be reported before parsing or signing. This is
+        # important for signers backed by an externally observable HSM call.
+        with pytest.raises(TypeError, match="owned XML replacement support"):
+            signer(self._ctx(), DocumentWithoutReplacement())
+
     def test_sign_enveloped_tamper_detected(self):
         cert_pem = (RSA_DIR / "rsa-2048-cert.pem").read_text()
         signed = pybergshamra.sign_enveloped(
