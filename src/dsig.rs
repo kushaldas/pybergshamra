@@ -1,17 +1,15 @@
 //! Digital signature verification and creation.
 
-use pyo3::exceptions::{PyTypeError, PyValueError};
+use pyo3::exceptions::PyTypeError;
 use pyo3::prelude::*;
-use pyo3::types::{PyAny, PyCapsule, PyCapsuleMethods};
+use pyo3::types::{PyAny, PyDict};
 
+use crate::errors::to_pyerr;
+use crate::keys::KeysManager;
 use bergshamra_dsig::{
     context::DsigContext as RustDsigContext, verify::VerifiedKeyInfo as RustVerifiedKeyInfo,
     verify::VerifiedReference as RustVerifiedReference, verify::VerifyResult as RustVerifyResult,
 };
-use pyuppsala_interop::{DocumentCapsule, SharedDoc, DOCUMENT_CAPSULE_ABI, DOCUMENT_CAPSULE_CNAME};
-
-use crate::errors::to_pyerr;
-use crate::keys::KeysManager;
 
 // ---------------------------------------------------------------------------
 // VerifiedReference
@@ -544,47 +542,30 @@ impl DsigContext {
 // Module-level functions
 // ---------------------------------------------------------------------------
 
-/// Extract and retain pyuppsala's shared native document handle.
-///
-/// Capsule pointer access is deliberately kept inside this short, GIL-held
-/// section. The cloned `Arc` owns the document for the complete native
-/// operation, so the temporary capsule can be dropped immediately afterwards.
-fn shared_document(document: &Bound<'_, PyAny>) -> PyResult<SharedDoc> {
-    let capsule_object = document
-        .call_method0("_bergshamra_document_capsule")
+/// Serialize a pyuppsala document without accessing its Rust-owned internals.
+fn document_xml(document: &Bound<'_, PyAny>) -> PyResult<String> {
+    let to_xml = document
+        .getattr("to_xml_with_options")
+        .map_err(|_| PyTypeError::new_err("document must be a pyuppsala.Document"))?;
+    let kwargs = PyDict::new(document.py());
+    kwargs.set_item("include_doctype", true)?;
+    to_xml
+        .call((), Some(&kwargs))?
+        .extract::<String>()
         .map_err(|_| {
-            PyTypeError::new_err(
-                "document must be a pyuppsala.Document with native Bergshamra interop support",
-            )
-        })?;
-    let capsule = capsule_object.cast::<PyCapsule>().map_err(|_| {
-        PyTypeError::new_err("pyuppsala document interop method did not return a PyCapsule")
-    })?;
-    let pointer = capsule
-        .pointer_checked(Some(DOCUMENT_CAPSULE_CNAME))?
-        .cast::<DocumentCapsule>();
-
-    // SAFETY: `pointer_checked` validated the versioned capsule name. The
-    // producer constructs that capsule from a boxed `DocumentCapsule`, and the
-    // capsule remains alive until after the `Arc` clone below.
-    let payload = unsafe { pointer.as_ref() };
-    if payload.abi != DOCUMENT_CAPSULE_ABI {
-        // A wrong-ABI capsule is an incompatible input type (pyuppsala build
-        // too old/new), not a runtime fault: raise TypeError like other
-        // non-document inputs so callers can handle both the same way.
-        return Err(PyTypeError::new_err(format!(
-            "unsupported pyuppsala document capsule ABI {}; expected {} \
-             (pybergshamra {} requires pyuppsala >= 0.10.0)",
-            payload.abi,
-            DOCUMENT_CAPSULE_ABI,
-            env!("CARGO_PKG_VERSION"),
-        )));
-    }
-    Ok(payload.shared.clone())
+            PyTypeError::new_err("pyuppsala.Document.to_xml_with_options() must return str")
+        })
 }
 
-fn document_lock_error(error: impl std::fmt::Display) -> bergshamra_core::Error {
-    bergshamra_core::Error::Other(format!("pyuppsala document lock failed: {error}"))
+/// Replace a pyuppsala document using owned XML after successful signing.
+fn replace_document(document: &Bound<'_, PyAny>, xml: &str) -> PyResult<()> {
+    let replace_xml = document.getattr("_replace_xml").map_err(|_| {
+        PyTypeError::new_err(
+            "document must be a pyuppsala.Document with owned XML replacement support",
+        )
+    })?;
+    replace_xml.call1((xml,))?;
+    Ok(())
 }
 
 /// Verify the first `<Signature>` (in document order) of a signed XML document.
@@ -600,25 +581,11 @@ pub fn verify(ctx: &DsigContext, xml: &str) -> PyResult<VerifyResult> {
     Ok(VerifyResult::from(result))
 }
 
-/// Verify the first `<Signature>` directly in a pyuppsala Document.
-///
-/// The existing DOM is borrowed through pyuppsala's native capsule, avoiding
-/// XML serialization and reparsing.
+/// Verify the first `<Signature>` in a pyuppsala Document through owned XML.
 #[pyfunction]
-pub fn verify_document(
-    py: Python<'_>,
-    ctx: &DsigContext,
-    document: &Bound<'_, PyAny>,
-) -> PyResult<VerifyResult> {
-    let shared = shared_document(document)?;
-    let rust_ctx = ctx.to_rust()?;
-    let result = py
-        .detach(move || {
-            let guard = shared.lock().map_err(document_lock_error)?;
-            bergshamra_dsig::verify::verify_document(&rust_ctx, guard.doc())
-        })
-        .map_err(to_pyerr)?;
-    Ok(VerifyResult::from(result))
+pub fn verify_document(ctx: &DsigContext, document: &Bound<'_, PyAny>) -> PyResult<VerifyResult> {
+    let xml = document_xml(document)?;
+    verify(ctx, &xml)
 }
 
 /// Verify **every** `<Signature>` element in the document, returning one
@@ -641,22 +608,14 @@ pub fn verify_all(ctx: &DsigContext, xml: &str) -> PyResult<Vec<VerifyResult>> {
     Ok(results.into_iter().map(VerifyResult::from).collect())
 }
 
-/// Verify every `<Signature>` directly in a pyuppsala Document.
+/// Verify every `<Signature>` in a pyuppsala Document through owned XML.
 #[pyfunction]
 pub fn verify_all_document(
-    py: Python<'_>,
     ctx: &DsigContext,
     document: &Bound<'_, PyAny>,
 ) -> PyResult<Vec<VerifyResult>> {
-    let shared = shared_document(document)?;
-    let rust_ctx = ctx.to_rust()?;
-    let results = py
-        .detach(move || {
-            let guard = shared.lock().map_err(document_lock_error)?;
-            bergshamra_dsig::verify::verify_all_document(&rust_ctx, guard.doc())
-        })
-        .map_err(to_pyerr)?;
-    Ok(results.into_iter().map(VerifyResult::from).collect())
+    let xml = document_xml(document)?;
+    verify_all(ctx, &xml)
 }
 
 /// Sign an XML template and return the signed XML string.
@@ -669,23 +628,15 @@ pub fn sign(ctx: &DsigContext, template_xml: &str) -> PyResult<String> {
     bergshamra_dsig::sign::sign(&rust_ctx, template_xml).map_err(to_pyerr)
 }
 
-/// Sign an existing XML-DSig template directly in a pyuppsala Document.
+/// Sign an existing XML-DSig template in a pyuppsala Document through owned XML.
 ///
 /// The document is mutated in place and must already contain empty
 /// `<DigestValue>` and `<SignatureValue>` elements.
 #[pyfunction]
-pub fn sign_document(
-    py: Python<'_>,
-    ctx: &DsigContext,
-    document: &Bound<'_, PyAny>,
-) -> PyResult<()> {
-    let shared = shared_document(document)?;
-    let rust_ctx = ctx.to_rust()?;
-    py.detach(move || {
-        let mut guard = shared.lock().map_err(document_lock_error)?;
-        guard.with_doc_mut(|_input, doc| bergshamra_dsig::sign::sign_document(&rust_ctx, doc))
-    })
-    .map_err(to_pyerr)
+pub fn sign_document(ctx: &DsigContext, document: &Bound<'_, PyAny>) -> PyResult<()> {
+    let xml = document_xml(document)?;
+    let signed = sign(ctx, &xml)?;
+    replace_document(document, &signed)
 }
 
 /// Build an enveloped `<ds:Signature>` and sign ``xml`` in one step.
@@ -773,15 +724,11 @@ pub fn sign_enveloped(
     bergshamra_dsig::sign::sign_owned(&rust_ctx, template).map_err(to_pyerr)
 }
 
-/// Build and sign an enveloped signature directly in a pyuppsala Document.
-///
-/// The supplied document is mutated in place. No document-sized XML string is
-/// created for the common enveloped-signature canonicalization path.
+/// Build and sign an enveloped signature in a pyuppsala Document via owned XML.
 #[pyfunction]
 #[pyo3(signature = (ctx, document, *, reference_id=None, signature_method=None, digest_method=None, c14n_method=None, cert_pem=None))]
 #[allow(clippy::too_many_arguments)]
 pub fn sign_enveloped_document(
-    py: Python<'_>,
     ctx: &DsigContext,
     document: &Bound<'_, PyAny>,
     reference_id: Option<&str>,
@@ -790,43 +737,17 @@ pub fn sign_enveloped_document(
     c14n_method: Option<&str>,
     cert_pem: Option<&str>,
 ) -> PyResult<()> {
-    use bergshamra_core::algorithm;
-
-    if reference_id == Some("") {
-        return Err(PyValueError::new_err(
-            "reference_id must be a non-empty ID value; pass reference_id=None to sign the whole document",
-        ));
-    }
-    if reference_id.is_some_and(|id| id.starts_with('#')) {
-        return Err(PyValueError::new_err(
-            "reference_id must be a raw ID value without a leading '#'",
-        ));
-    }
-
-    // Own all strings before releasing the GIL: the incoming `&str` values may
-    // borrow Python string storage and must not cross the detached boundary.
-    let reference_id = reference_id.map(str::to_owned);
-    let signature_method = signature_method.unwrap_or(algorithm::RSA_SHA256).to_owned();
-    let digest_method = digest_method.unwrap_or(algorithm::SHA256).to_owned();
-    let c14n_method = c14n_method.unwrap_or(algorithm::EXC_C14N).to_owned();
-    let key_info = build_key_info(cert_pem)?;
-    let shared = shared_document(document)?;
-    let rust_ctx = ctx.to_rust()?;
-
-    py.detach(move || {
-        let mut guard = shared.lock().map_err(document_lock_error)?;
-        let options = bergshamra_dsig::sign::EnvelopedSignatureOptions::new(
-            reference_id.as_deref(),
-            &signature_method,
-            &digest_method,
-            &c14n_method,
-            Some(&key_info),
-        );
-        guard.with_doc_mut(|_input, doc| {
-            bergshamra_dsig::sign::sign_enveloped_document(&rust_ctx, doc, options)
-        })
-    })
-    .map_err(to_pyerr)
+    let xml = document_xml(document)?;
+    let signed = sign_enveloped(
+        ctx,
+        &xml,
+        reference_id,
+        signature_method,
+        digest_method,
+        c14n_method,
+        cert_pem,
+    )?;
+    replace_document(document, &signed)
 }
 
 fn validate_signature_method(uri: &str) -> PyResult<&str> {

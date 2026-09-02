@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any, Optional, TypeAlias
 
 # The document-native APIs (``verify_document``, ``sign_document``, ...) accept
-# a ``pyuppsala.Document`` (pyuppsala >= 0.10.0). pyuppsala is an optional
+# a ``pyuppsala.Document`` (pyuppsala >= 0.11.0). pyuppsala is an optional
 # dependency (the ``documents`` extra), so the stubs do not import it -- a hard
 # import would break type checking for installs without the extra. The alias
 # keeps the signatures readable while degrading to ``Any``.
@@ -617,7 +617,7 @@ def verify(ctx: DsigContext, xml: str) -> VerifyResult:
     ...
 
 def verify_document(ctx: DsigContext, document: Document) -> VerifyResult:
-    """Verify the first signature directly in a pyuppsala Document."""
+    """Verify the first signature from a pyuppsala Document through owned XML."""
     ...
 
 def verify_all(ctx: DsigContext, xml: str) -> list[VerifyResult]:
@@ -636,7 +636,7 @@ def verify_all(ctx: DsigContext, xml: str) -> list[VerifyResult]:
     ...
 
 def verify_all_document(ctx: DsigContext, document: Document) -> list[VerifyResult]:
-    """Verify every signature directly in a pyuppsala Document."""
+    """Verify every signature from a pyuppsala Document through owned XML."""
     ...
 
 def sign(ctx: DsigContext, template_xml: str) -> str:

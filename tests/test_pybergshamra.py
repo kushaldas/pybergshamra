@@ -1483,16 +1483,19 @@ class TestSignEnveloped:
         assert pybergshamra.verify(self._verify_ctx(), signed).is_valid
 
     def test_sign_and_verify_pyuppsala_document_in_place(self):
-        # Document-interop tests need the optional pyuppsala peer (>= 0.10.0
-        # for the v2 capsule ABI); skip cleanly where it is not installed.
+        # Document tests need the optional pyuppsala peer with the owned XML
+        # replacement hook (>= 0.11.0); skip where it is not installed.
         Document = pytest.importorskip("pyuppsala").Document
 
         document = Document(self.DOC)
+        old_root = document.document_element
         result = pybergshamra.sign_enveloped_document(
             self._ctx(), document, reference_id="ABC123"
         )
 
         assert result is None
+        assert old_root.parent.kind == "document"
+        assert old_root.tag.local_name == "EntitiesDescriptor"
         signed = document.to_xml()
         assert signed.index("<ds:Signature") < signed.index("<md:EntityDescriptor")
         assert pybergshamra.sign_document(self._ctx(), document) is None
@@ -1501,9 +1504,36 @@ class TestSignEnveloped:
         assert [reference.uri for reference in verification.references] == ["#ABC123"]
         assert pybergshamra.verify(self._verify_ctx(), signed).is_valid
 
+    def test_signing_native_etree_document_updates_existing_root_proxy(self):
+        pyuppsala = pytest.importorskip("pyuppsala")
+        root = pyuppsala.etree.fromstring(self.DOC)
+        document = pyuppsala.etree.native_document(root)
+
+        pybergshamra.sign_enveloped_document(
+            self._ctx(), document, reference_id="ABC123"
+        )
+
+        signed = pyuppsala.etree.tostring(root, encoding="unicode")
+        assert "<ds:Signature" in signed
+        assert pybergshamra.verify(self._verify_ctx(), signed).is_valid
+
+    def test_signing_pyuppsala_document_preserves_doctype(self):
+        Document = pytest.importorskip("pyuppsala").Document
+        doctype = '<!DOCTYPE md:EntitiesDescriptor SYSTEM "metadata.dtd">'
+        document = Document(f"{doctype}{self.DOC}")
+
+        pybergshamra.sign_enveloped_document(
+            self._ctx(), document, reference_id="ABC123"
+        )
+
+        assert document.doctype == doctype
+        signed = document.to_xml_with_options(include_doctype=True)
+        assert signed.startswith(doctype)
+        assert pybergshamra.verify_document(self._verify_ctx(), document).is_valid
+
     def test_verify_all_pyuppsala_document(self):
-        # Document-interop tests need the optional pyuppsala peer (>= 0.10.0
-        # for the v2 capsule ABI); skip cleanly where it is not installed.
+        # Document tests need the optional pyuppsala peer with the owned XML
+        # replacement hook (>= 0.11.0); skip where it is not installed.
         Document = pytest.importorskip("pyuppsala").Document
 
         document = Document(self.DOC)

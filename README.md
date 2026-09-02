@@ -188,7 +188,7 @@ each taking an allow-list of permitted algorithm URIs. The HSM operation classes
 | `C14nMode` | Canonicalization mode (Inclusive, Exclusive, etc.) |
 | `VerifyResult` | Result of signature verification |
 | `verify(ctx, xml)` | Verify the first `<Signature>` in document order |
-| `verify_document(ctx, document)` | Verify a `pyuppsala.Document` without reparsing |
+| `verify_document(ctx, document)` | Verify a `pyuppsala.Document` through owned XML |
 | `verify_all(ctx, xml)` | Verify every `<Signature>` in document order |
 | `verify_all_document(ctx, document)` | Verify every signature in a `pyuppsala.Document` |
 | `sign(ctx, template)` | Sign an XML template |
@@ -205,9 +205,11 @@ each taking an allow-list of permitted algorithm URIs. The HSM operation classes
 | `Pkcs11Signer` / `Pkcs11Verifier` | HSM-backed XML-DSig signing / verification |
 | `Pkcs11Decryptor` / `Pkcs11Encryptor` / `Pkcs11KeyWrapper` | HSM-backed XML-Enc key transport / key wrap |
 
-The native ``*_document`` APIs require pyuppsala 0.10.0 or newer (the zero-copy
-document capsule, ABI v2). Install both
-packages with ``pip install 'pybergshamra[documents]'``.
+The ``*_document`` APIs require pyuppsala 0.11.0 or newer. They serialize at
+the Python-extension boundary and safely import successful signing results
+back into the original document, including a preserved DOCTYPE; no Rust DOM
+pointers cross shared libraries.
+Install both packages with ``pip install 'pybergshamra[documents]'``.
 
 `DsigContext(manager)` uses secure defaults (`trusted_keys_only`,
 `strict_verification`, `hmac_min_out_len=160`, and required local reference

@@ -1329,14 +1329,13 @@ verify and sign
 
 .. function:: verify_document(ctx: DsigContext, document: pyuppsala.Document) -> VerifyResult
 
-   Verify the first ``<Signature>`` directly against an already-parsed
-   ``pyuppsala.Document``. The document is shared with the native verifier,
-   avoiding serialization and reparsing.
+   Verify the first ``<Signature>`` from a ``pyuppsala.Document``. The document
+   is serialized to owned XML before entering the verifier; no Rust-owned DOM
+   pointer crosses the extension-module boundary.
 
 .. function:: verify_all_document(ctx: DsigContext, document: pyuppsala.Document) -> list[VerifyResult]
 
-   Verify every ``<Signature>`` directly against an already-parsed
-   ``pyuppsala.Document``.
+   Verify every ``<Signature>`` from a ``pyuppsala.Document`` through owned XML.
 
 .. function:: sign(ctx: DsigContext, template_xml: str) -> str
 
@@ -1356,9 +1355,9 @@ verify and sign
 
 .. function:: sign_document(ctx: DsigContext, document: pyuppsala.Document) -> None
 
-   Fill an existing XML-DSig template directly in ``document``. The document is
-   mutated in place and must contain empty ``DigestValue`` and
-   ``SignatureValue`` elements.
+   Fill an existing XML-DSig template in ``document``. The document is
+   serialized, signed, and safely replaced in place after success. It must
+   contain empty ``DigestValue`` and ``SignatureValue`` elements.
 
 .. function:: sign_enveloped(ctx: DsigContext, xml: str, *, reference_id: str | None = None, signature_method: str | None = None, digest_method: str | None = None, c14n_method: str | None = None, cert_pem: str | None = None) -> str
 
@@ -1375,9 +1374,8 @@ verify and sign
 
 .. function:: sign_enveloped_document(ctx: DsigContext, document: pyuppsala.Document, *, reference_id: str | None = None, signature_method: str | None = None, digest_method: str | None = None, c14n_method: str | None = None, cert_pem: str | None = None) -> None
 
-   Build and sign an enveloped ``<ds:Signature>`` directly in ``document``.
-   The document is mutated in place. The common enveloped-signature path does
-   not create a document-sized intermediate XML string.
+   Build and sign an enveloped ``<ds:Signature>`` in ``document``. The document
+   is serialized, signed, and safely replaced in place after success.
 
 XML encryption
 --------------

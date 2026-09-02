@@ -53,8 +53,9 @@ Sign an already-parsed pyuppsala document in place:
     )
     assert pybergshamra.verify_document(verify_ctx, document)
 
-The document APIs share the existing native Uppsala DOM, avoiding the
-serialization and parse required by the string APIs.
+The document APIs exchange owned XML between the two extension modules and
+safely import successful signing results back into the existing Uppsala arena.
+This avoids sharing Rust pointers across independently loaded libraries.
 
 The lower-level string API remains available. Build a signature template with
 pyuppsala's ``XmlWriter`` and sign it:
