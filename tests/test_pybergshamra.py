@@ -1531,6 +1531,18 @@ class TestSignEnveloped:
         assert signed.startswith(doctype)
         assert pybergshamra.verify_document(self._verify_ctx(), document).is_valid
 
+    def test_failed_document_signing_leaves_document_unchanged(self):
+        Document = pytest.importorskip("pyuppsala").Document
+        document = Document(self.DOC)
+        before = document.to_xml_with_options(include_doctype=True)
+
+        with pytest.raises(pybergshamra.BergshamraError):
+            pybergshamra.sign_enveloped_document(
+                self._ctx(), document, reference_id="missing-id"
+            )
+
+        assert document.to_xml_with_options(include_doctype=True) == before
+
     def test_verify_all_pyuppsala_document(self):
         # Document tests need the optional pyuppsala peer with the owned XML
         # replacement hook (>= 0.11.0); skip where it is not installed.

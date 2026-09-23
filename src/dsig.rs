@@ -659,7 +659,13 @@ pub fn sign_document(
     let replace_xml = document_replace_hook(document)?;
     let rust_ctx = ctx.to_rust()?;
     let signed = py
-        .detach(move || bergshamra_dsig::sign::sign(&rust_ctx, &xml))
+        .detach(move || {
+            let mut doc = uppsala::parse(&xml)
+                .map_err(|e| bergshamra_core::Error::XmlParse(e.to_string()))?;
+            bergshamra_dsig::sign::sign_document(&rust_ctx, &mut doc)?;
+            let options = uppsala::XmlWriteOptions::compact().with_doctype(true);
+            Ok::<String, bergshamra_core::Error>(doc.to_xml_with_options(&options))
+        })
         .map_err(to_pyerr)?;
     replace_document(&replace_xml, &signed)
 }
@@ -795,17 +801,25 @@ pub fn sign_enveloped_document(
     let digest_method = digest_method.map(str::to_owned);
     let c14n_method = c14n_method.map(str::to_owned);
     let cert_pem = cert_pem.map(str::to_owned);
-    let signed = py.detach(move || {
-        sign_enveloped_with_context(
-            &rust_ctx,
-            &xml,
-            reference_id.as_deref(),
-            signature_method.as_deref(),
-            digest_method.as_deref(),
-            c14n_method.as_deref(),
-            cert_pem.as_deref(),
-        )
-    })?;
+    let key_info = build_key_info(cert_pem.as_deref())?;
+    let signed = py
+        .detach(move || {
+            use bergshamra_core::algorithm;
+
+            let mut doc = uppsala::parse(&xml)
+                .map_err(|e| bergshamra_core::Error::XmlParse(e.to_string()))?;
+            let options = bergshamra_dsig::sign::EnvelopedSignatureOptions::new(
+                reference_id.as_deref(),
+                signature_method.as_deref().unwrap_or(algorithm::RSA_SHA256),
+                digest_method.as_deref().unwrap_or(algorithm::SHA256),
+                c14n_method.as_deref().unwrap_or(algorithm::EXC_C14N),
+                Some(&key_info),
+            );
+            bergshamra_dsig::sign::sign_enveloped_document(&rust_ctx, &mut doc, options)?;
+            let write_options = uppsala::XmlWriteOptions::compact().with_doctype(true);
+            Ok::<String, bergshamra_core::Error>(doc.to_xml_with_options(&write_options))
+        })
+        .map_err(to_pyerr)?;
     replace_document(&replace_xml, &signed)
 }
 
@@ -953,29 +967,27 @@ fn root_start_tag_end(xml: &str) -> PyResult<usize> {
         .next_event()
         .map_err(|e| to_pyerr(bergshamra_core::Error::XmlParse(e.to_string())))?
     {
-        match event {
-            bergshamra_xml::uppsala::PullEvent::StartElement {
-                byte_start,
-                byte_end,
-                ..
-            } => {
-                let next = parser
-                    .next_event()
-                    .map_err(|e| to_pyerr(bergshamra_core::Error::XmlParse(e.to_string())))?;
-                if matches!(
-                    next,
-                    Some(bergshamra_xml::uppsala::PullEvent::EndElement {
-                        byte_start: end_start,
-                        ..
-                    }) if end_start == byte_start
-                ) {
-                    return Err(to_pyerr(bergshamra_core::Error::XmlStructure(
-                        "cannot envelope-sign a self-closing root element".to_string(),
-                    )));
-                }
-                return Ok(byte_end);
+        if let bergshamra_xml::uppsala::PullEvent::StartElement {
+            byte_start,
+            byte_end,
+            ..
+        } = event
+        {
+            let next = parser
+                .next_event()
+                .map_err(|e| to_pyerr(bergshamra_core::Error::XmlParse(e.to_string())))?;
+            if matches!(
+                next,
+                Some(bergshamra_xml::uppsala::PullEvent::EndElement {
+                    byte_start: end_start,
+                    ..
+                }) if end_start == byte_start
+            ) {
+                return Err(to_pyerr(bergshamra_core::Error::XmlStructure(
+                    "cannot envelope-sign a self-closing root element".to_string(),
+                )));
             }
-            _ => {}
+            return Ok(byte_end);
         }
     }
 
