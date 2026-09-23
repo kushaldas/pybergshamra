@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.9.1 [2026-09-23]
+
+### Security
+
+- Updated `cryptoki` 0.12.0 -> 0.12.1 to address RUSTSEC-2026-0286.
+
+### Changed
+
+- Document signing now parses the owned XML handoff once and uses Bergshamra's
+  native in-place Uppsala signer. This preserves the safe serialized boundary
+  with pyuppsala while avoiding redundant full-document parses for large XML
+  aggregates.
+- Updated all `bergshamra` crates 0.9.0 -> 0.9.1, including the batched
+  reference-digest and incremental exclusive-C14N performance improvements.
+
 ## 0.9.0 [2026-09-02]
 
 ### Security
