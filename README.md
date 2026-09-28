@@ -7,6 +7,9 @@ Python bindings for the Bergshamra XML Security library
 pybergshamra gives you a fast, correct, and memory-safe XML security toolkit from
 Python with no C dependencies to compile and no transitive native libraries to audit.
 
+Version 0.9.2 (2026-09-28) uses Bergshamra 0.9.2 and Kryptering 0.6.0
+from crates.io, with tsp-ltv 0.5.0 for certificate validation.
+
 ## Features
 
 - **XML Digital Signatures** -- sign and verify (RSA, EC, Ed25519, HMAC, post-quantum)
@@ -131,6 +134,10 @@ print(h.hex())
 Key material stays on the token; pybergshamra talks to it over PKCS#11 (tested
 against SoftHSM2). Algorithms are given as W3C URIs from `Algorithm`; ECDSA also
 needs an `ec_curve` because the URI does not encode the curve.
+
+Starting with 0.9.2, opening a session rejects an existing token login.
+Reuse the authenticated session for multiple operations, or close all sessions
+and operation objects before logging in again.
 
 ```python
 import pybergshamra
