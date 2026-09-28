@@ -1704,6 +1704,10 @@ does not encode the curve. Wire an operation into a context with
 
       Open an authenticated read/write session using a raw-byte PIN.
 
+   Both session-opening methods reject an existing token login. Reuse an
+   authenticated session across operations, or close all sessions and operation
+   objects before logging in again.
+
 .. class:: Pkcs11Session
 
    An authenticated PKCS#11 session. Pass it to the operation constructors below.

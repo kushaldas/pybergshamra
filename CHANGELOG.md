@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.9.2 [2026-09-28]
+
+### Changed
+
+- Update all Bergshamra crates to 0.9.2 and Kryptering to 0.6.0 from
+  crates.io, including tsp-ltv 0.5.0 for certificate validation.
+- PKCS#11 session creation now rejects an existing token login. Reuse an
+  authenticated session across operations, or close all sessions and operation
+  objects before logging in again.
+- Refresh the Rust and Python lockfiles and documentation release version.
+
 ## 0.9.1 [2026-09-23]
 
 ### Security
