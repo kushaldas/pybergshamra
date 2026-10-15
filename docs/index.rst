@@ -14,10 +14,11 @@ Features
 - **Key management** -- RSA, EC, Ed25519, X25519, HMAC, AES, 3DES, PKCS#12, X.509
 - **Certificate validation** -- X.509 chain building and verification with CRL support
 - **Cryptographic primitives** -- digest, PBKDF2, HKDF, ConcatKDF
-- **Post-quantum signatures** -- ML-DSA-44/65/87, SLH-DSA
+- **Post-quantum signatures** -- ML-DSA-44/65/87 (xmlsec and W3C ``2026/08/xmldsig-more`` identifiers), SLH-DSA
 - **HSM / PKCS#11** -- sign, verify, encrypt and decrypt with keys held on a hardware token (or SoftHSM2)
 - **Anti-XSW protection** -- strict verification mode
 - **Zero Python dependencies** -- ships as a single native extension
+- **Thread-friendly** -- every CPU-bound call releases the GIL, so verification and signing scale across cores from a thread pool
 
 .. note::
 

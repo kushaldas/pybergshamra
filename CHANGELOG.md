@@ -1,5 +1,42 @@
 # Changelog
 
+## 0.10.0 [2026-10-15]
+
+### Changed
+
+- Update all Bergshamra crates to 0.10.0 from crates.io, removing the local
+  path overrides used while the performance work was in progress. Bergshamra
+  0.10.0 brings the incremental inclusive C14N serializer, arena-borrowed
+  attribute rendering, pre-sized output buffers, and Uppsala 0.12.0.
+- All hot entry points (`verify`, `verify_all`, `sign`, `sign_enveloped`,
+  `canonicalize`, `canonicalize_subtree`, `encrypt`, `decrypt`,
+  `decrypt_to_bytes`) now release the GIL for their CPU-bound Rust work, so
+  multi-threaded Python callers scale across cores (4-thread verify wall time
+  dropped ~57%).
+- The extension is built with fat LTO, a single codegen unit, and stripped
+  symbols.
+- Added `benchmarks/pybench.py` for reproducible Python-layer A/B measurement
+  (`docs/performance/20261007-optimized-crates-gil-release.md` has results and
+  methodology).
+- Bergshamra 0.10.0 accepts the W3C
+  `http://www.w3.org/2026/08/xmldsig-more#ml-dsa-44/65/87` signature
+  identifiers alongside the xmlsec ones, so metadata feeds signed with the
+  W3C ML-DSA namespace verify through `verify`, `verify_document`, and the
+  pyFF loader. Injected PKCS#11 signers and verifiers match either
+  spelling of the same parameter set. `Algorithm.ML_DSA_44_W3C`,
+  `Algorithm.ML_DSA_65_W3C`, and `Algorithm.ML_DSA_87_W3C` expose the W3C
+  identifiers next to the existing xmlsec ones.
+- Require `uppsala` 0.12.0 on the Rust side and `pyuppsala` 0.12.0 or newer
+  for the `*_document` APIs and the test suite; pyuppsala is now a hard test
+  dependency, so the document tests no longer skip when it is absent.
+- `sign_enveloped_document` now hands pyuppsala only the computed
+  `<ds:Signature>` fragment (through `Document._prepend_fragment_xml`,
+  pyuppsala 0.13+) instead of replacing the whole document with re-parsed
+  owned XML, and all `*_document` APIs read the document as `bytes` when
+  `Document.to_xml_bytes_with_options` exists. On a 108 MB eduGAIN aggregate
+  this removes one full serialization and one full reparse per signature.
+  Older pyuppsala documents keep the owned-XML replacement path.
+
 ## 0.9.2 [2026-09-28]
 
 ### Changed

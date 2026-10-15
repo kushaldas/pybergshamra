@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 
 import pytest
+import pyuppsala
 
 import pybergshamra
 from pybergshamra import (
@@ -131,6 +132,16 @@ class TestAlgorithmConstants:
 
     def test_aes128_cbc_uri(self):
         assert Algorithm.AES128_CBC == "http://www.w3.org/2001/04/xmlenc#aes128-cbc"
+
+    def test_ml_dsa_w3c_identifiers(self):
+        """Both the xmlsec and the W3C ML-DSA identifiers are exposed."""
+        for size in ("44", "65", "87"):
+            xmlsec = getattr(Algorithm, f"ML_DSA_{size}")
+            w3c = getattr(Algorithm, f"ML_DSA_{size}_W3C")
+            assert xmlsec == (
+                f"http://www.aleksey.com/xmlsec/2025/12/xmldsig-more#ml-dsa-{size}"
+            )
+            assert w3c == f"http://www.w3.org/2026/08/xmldsig-more#ml-dsa-{size}"
 
     def test_c14n_uri(self):
         assert Algorithm.C14N == "http://www.w3.org/TR/2001/REC-xml-c14n-20010315"
@@ -1483,9 +1494,7 @@ class TestSignEnveloped:
         assert pybergshamra.verify(self._verify_ctx(), signed).is_valid
 
     def test_sign_and_verify_pyuppsala_document_in_place(self):
-        # Document tests need the optional pyuppsala peer with the owned XML
-        # replacement hook (>= 0.11.0); skip where it is not installed.
-        Document = pytest.importorskip("pyuppsala").Document
+        Document = pyuppsala.Document
 
         document = Document(self.DOC)
         old_root = document.document_element
@@ -1505,7 +1514,6 @@ class TestSignEnveloped:
         assert pybergshamra.verify(self._verify_ctx(), signed).is_valid
 
     def test_signing_native_etree_document_updates_existing_root_proxy(self):
-        pyuppsala = pytest.importorskip("pyuppsala")
         root = pyuppsala.etree.fromstring(self.DOC)
         document = pyuppsala.etree.native_document(root)
 
@@ -1518,7 +1526,7 @@ class TestSignEnveloped:
         assert pybergshamra.verify(self._verify_ctx(), signed).is_valid
 
     def test_signing_pyuppsala_document_preserves_doctype(self):
-        Document = pytest.importorskip("pyuppsala").Document
+        Document = pyuppsala.Document
         doctype = '<!DOCTYPE md:EntitiesDescriptor SYSTEM "metadata.dtd">'
         document = Document(f"{doctype}{self.DOC}")
 
@@ -1532,7 +1540,7 @@ class TestSignEnveloped:
         assert pybergshamra.verify_document(self._verify_ctx(), document).is_valid
 
     def test_failed_document_signing_leaves_document_unchanged(self):
-        Document = pytest.importorskip("pyuppsala").Document
+        Document = pyuppsala.Document
         document = Document(self.DOC)
         before = document.to_xml_with_options(include_doctype=True)
 
@@ -1544,9 +1552,7 @@ class TestSignEnveloped:
         assert document.to_xml_with_options(include_doctype=True) == before
 
     def test_verify_all_pyuppsala_document(self):
-        # Document tests need the optional pyuppsala peer with the owned XML
-        # replacement hook (>= 0.11.0); skip where it is not installed.
-        Document = pytest.importorskip("pyuppsala").Document
+        Document = pyuppsala.Document
 
         document = Document(self.DOC)
         pybergshamra.sign_enveloped_document(self._ctx(), document)
@@ -1554,6 +1560,39 @@ class TestSignEnveloped:
         results = pybergshamra.verify_all_document(self._verify_ctx(), document)
         assert len(results) == 1
         assert results[0].is_valid
+
+    def test_sign_enveloped_document_splices_fragment_and_keeps_proxies(self):
+        # With pyuppsala >= 0.13 only the <ds:Signature> fragment is spliced in;
+        # existing element proxies stay valid and the result verifies both as a
+        # document and as serialized text.
+        root = pyuppsala.etree.fromstring(self.DOC)
+        document = pyuppsala.etree.native_document(root)
+        first_child_before = root[0]
+        pybergshamra.sign_enveloped_document(
+            self._ctx(), document, reference_id="ABC123"
+        )
+        assert root[0].tag == "{http://www.w3.org/2000/09/xmldsig#}Signature"
+        assert root[1] is first_child_before
+        assert pybergshamra.verify_document(self._verify_ctx(), document).is_valid
+        signed = pyuppsala.etree.tostring(root, encoding="unicode")
+        assert pybergshamra.verify(self._verify_ctx(), signed).is_valid
+        if hasattr(document, "_prepend_fragment_xml"):
+            # The fragment path never calls the whole-document replacement hook.
+            calls = []
+            document2 = pyuppsala.Document(self.DOC)
+            original = document2._replace_xml
+
+            class Spy:
+                def __getattr__(self, name):
+                    return getattr(document2, name)
+
+                def _replace_xml(self, xml):
+                    calls.append(xml)
+                    return original(xml)
+
+            pybergshamra.sign_enveloped_document(self._ctx(), Spy(), reference_id="ABC123")
+            assert calls == []
+            assert pybergshamra.verify_document(self._verify_ctx(), document2).is_valid
 
     def test_document_api_rejects_non_pyuppsala_object(self):
         with pytest.raises(TypeError, match="pyuppsala.Document"):

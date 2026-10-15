@@ -255,6 +255,21 @@ impl Algorithm {
     fn ML_DSA_87() -> &'static str {
         algorithm::ML_DSA_87
     }
+    // W3C xmldsig-more (2026/08) spellings of the same parameter sets. Both
+    // spellings are accepted for signing and verification; a template keeps
+    // the one it declares.
+    #[classattr]
+    fn ML_DSA_44_W3C() -> &'static str {
+        algorithm::ML_DSA_44_W3C
+    }
+    #[classattr]
+    fn ML_DSA_65_W3C() -> &'static str {
+        algorithm::ML_DSA_65_W3C
+    }
+    #[classattr]
+    fn ML_DSA_87_W3C() -> &'static str {
+        algorithm::ML_DSA_87_W3C
+    }
 
     // -- SLH-DSA Post-Quantum (6) ---------------------------------------------
     #[classattr]

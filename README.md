@@ -7,7 +7,7 @@ Python bindings for the Bergshamra XML Security library
 pybergshamra gives you a fast, correct, and memory-safe XML security toolkit from
 Python with no C dependencies to compile and no transitive native libraries to audit.
 
-Version 0.9.2 (2026-09-28) uses Bergshamra 0.9.2 and Kryptering 0.6.0
+Version 0.10.0 (2026-10-15) uses Bergshamra 0.10.0 and Kryptering 0.6.0
 from crates.io, with tsp-ltv 0.5.0 for certificate validation.
 
 ## Features
@@ -18,10 +18,11 @@ from crates.io, with tsp-ltv 0.5.0 for certificate validation.
 - **Key management** -- RSA, EC, Ed25519, X25519, HMAC, AES, 3DES, PKCS#12, X.509
 - **Certificate validation** -- X.509 chain building and verification with CRL support
 - **Cryptographic primitives** -- digest, PBKDF2, HKDF, ConcatKDF
-- **Post-quantum signatures** -- ML-DSA-44/65/87, SLH-DSA
+- **Post-quantum signatures** -- ML-DSA-44/65/87 (xmlsec and W3C `2026/08/xmldsig-more` identifiers), SLH-DSA
 - **HSM / PKCS#11** -- sign, verify, encrypt and decrypt with keys that never leave a hardware token (or SoftHSM2)
 - **Anti-XSW protection** -- strict verification mode
 - **Zero Python dependencies** -- ships as a single native extension
+- **Thread-friendly** -- every CPU-bound call releases the GIL, so verification and signing scale across cores from a thread pool
 
 ## Security note: weak-digest X.509 policy
 
@@ -212,10 +213,13 @@ each taking an allow-list of permitted algorithm URIs. The HSM operation classes
 | `Pkcs11Signer` / `Pkcs11Verifier` | HSM-backed XML-DSig signing / verification |
 | `Pkcs11Decryptor` / `Pkcs11Encryptor` / `Pkcs11KeyWrapper` | HSM-backed XML-Enc key transport / key wrap |
 
-The ``*_document`` APIs require pyuppsala 0.11.0 or newer. They serialize at
-the Python-extension boundary and safely import successful signing results
-back into the original document, including a preserved DOCTYPE; no Rust DOM
-pointers cross shared libraries.
+The ``*_document`` APIs require pyuppsala 0.12.0 or newer. They serialize once
+at the Python-extension boundary (as bytes when pyuppsala offers it) and import
+successful signing results back into the original document, including a
+preserved DOCTYPE; no Rust DOM pointers cross shared libraries. With pyuppsala
+0.13.0 or newer, `sign_enveloped_document` splices only the computed
+`<ds:Signature>` element into the live document instead of replacing it, so
+large aggregates are not re-serialized and re-parsed after signing.
 Install both packages with ``pip install 'pybergshamra[documents]'``.
 
 `DsigContext(manager)` uses secure defaults (`trusted_keys_only`,
