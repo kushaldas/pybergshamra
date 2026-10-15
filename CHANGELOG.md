@@ -1,5 +1,45 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- Bergshamra 0.10.1 accepts the W3C
+  `http://www.w3.org/2026/08/xmldsig-more#slh-dsa-sha2-128s/128f/192s/192f/256s/256f`
+  signature identifiers alongside the xmlsec ones, so metadata feeds signed
+  with the W3C SLH-DSA namespace, such as the eduID Luxembourg
+  SLH-DSA-SHA2-256s upstream feed, verify through `verify`,
+  `verify_document`, and the pyFF loader. `Algorithm.SLH_DSA_SHA2_*_W3C`
+  expose the six identifiers next to the existing xmlsec constants. The
+  SHAKE parameter sets are not implemented.
+
+### Fixed
+
+- `sign_document` and `sign_enveloped_document` now hold the target
+  `pyuppsala.Document` for the whole snapshot, sign, and update sequence.
+  Two threads signing the same document could previously both capture the
+  unsigned XML while the GIL was released and both splice their signature
+  in; each enveloped signature excluded only itself, so nothing verified,
+  and on the whole-document replacement path the second signer dropped the
+  first signature. A concurrent call on the same document now waits (with
+  the GIL released) until the first has updated it, so every later
+  signature covers the earlier ones. Mutating a document through pyuppsala
+  while a signing call on it is in progress remains the caller's
+  responsibility, and the API reference now says so instead of promising
+  that caller objects are never touched concurrently.
+- `benchmarks/pybench.py --json` writes its timing rows to stderr so stdout
+  carries exactly one JSON document.
+
+### Changed
+
+- Require the Bergshamra 0.10.1 crates and pyuppsala 0.13.0 or newer for
+  the `*_document` APIs, so the fragment-splice path of
+  `sign_enveloped_document` is always available.
+- The development lockfile pins pyuppsala 0.13.0 so the test suite exercises
+  the fragment-splice path of `sign_enveloped_document`; the proxy-identity
+  assertion in that test is now conditional on the pyuppsala fragment hook,
+  so the suite also passes where the whole document is replaced instead.
+
 ## 0.10.0 [2026-10-15]
 
 ### Changed

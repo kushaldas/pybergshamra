@@ -296,6 +296,31 @@ impl Algorithm {
     fn SLH_DSA_SHA2_256S() -> &'static str {
         algorithm::SLH_DSA_SHA2_256S
     }
+    // W3C xmldsig-more (2026/08) spellings of the same SHA2 parameter sets.
+    #[classattr]
+    fn SLH_DSA_SHA2_128F_W3C() -> &'static str {
+        algorithm::SLH_DSA_SHA2_128F_W3C
+    }
+    #[classattr]
+    fn SLH_DSA_SHA2_128S_W3C() -> &'static str {
+        algorithm::SLH_DSA_SHA2_128S_W3C
+    }
+    #[classattr]
+    fn SLH_DSA_SHA2_192F_W3C() -> &'static str {
+        algorithm::SLH_DSA_SHA2_192F_W3C
+    }
+    #[classattr]
+    fn SLH_DSA_SHA2_192S_W3C() -> &'static str {
+        algorithm::SLH_DSA_SHA2_192S_W3C
+    }
+    #[classattr]
+    fn SLH_DSA_SHA2_256F_W3C() -> &'static str {
+        algorithm::SLH_DSA_SHA2_256F_W3C
+    }
+    #[classattr]
+    fn SLH_DSA_SHA2_256S_W3C() -> &'static str {
+        algorithm::SLH_DSA_SHA2_256S_W3C
+    }
 
     // -- Block Cipher (7) -----------------------------------------------------
     #[classattr]

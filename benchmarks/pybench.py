@@ -54,6 +54,11 @@ def document(assertions: int) -> str:
     return "".join(parts)
 
 
+# Where the human-readable timing rows go. In --json mode they move to stderr
+# so stdout carries exactly one JSON document and can be redirected to a file.
+ROW_STREAM = sys.stdout
+
+
 def bench(name, fn, runs=30, warmup=3):
     for _ in range(warmup):
         fn()
@@ -63,7 +68,7 @@ def bench(name, fn, runs=30, warmup=3):
         fn()
         times.append((time.perf_counter() - t0) * 1000)
     med = statistics.median(times)
-    print(f"{name:<34} {med:>10.3f} ms   (min {min(times):.3f})")
+    print(f"{name:<34} {med:>10.3f} ms   (min {min(times):.3f})", file=ROW_STREAM)
     return {"name": name, "median_ms": med, "min_ms": min(times)}
 
 
@@ -95,7 +100,10 @@ def main() -> int:
     results["build_info"]["signed_small_bytes"] = len(signed_small)
     results["build_info"]["signed_large_bytes"] = len(signed_large)
 
-    if not args.json:
+    global ROW_STREAM
+    if args.json:
+        ROW_STREAM = sys.stderr
+    else:
         print(f"signed_small: {len(signed_small)} B, signed_large: {len(signed_large)//1024} KiB")
         print()
 

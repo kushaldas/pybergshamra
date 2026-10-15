@@ -18,7 +18,7 @@ from crates.io, with tsp-ltv 0.5.0 for certificate validation.
 - **Key management** -- RSA, EC, Ed25519, X25519, HMAC, AES, 3DES, PKCS#12, X.509
 - **Certificate validation** -- X.509 chain building and verification with CRL support
 - **Cryptographic primitives** -- digest, PBKDF2, HKDF, ConcatKDF
-- **Post-quantum signatures** -- ML-DSA-44/65/87 (xmlsec and W3C `2026/08/xmldsig-more` identifiers), SLH-DSA
+- **Post-quantum signatures** -- ML-DSA-44/65/87 and SLH-DSA SHA2-128f/128s/192f/192s/256f/256s, each under the xmlsec and the W3C `2026/08/xmldsig-more` identifiers
 - **HSM / PKCS#11** -- sign, verify, encrypt and decrypt with keys that never leave a hardware token (or SoftHSM2)
 - **Anti-XSW protection** -- strict verification mode
 - **Zero Python dependencies** -- ships as a single native extension
@@ -213,13 +213,16 @@ each taking an allow-list of permitted algorithm URIs. The HSM operation classes
 | `Pkcs11Signer` / `Pkcs11Verifier` | HSM-backed XML-DSig signing / verification |
 | `Pkcs11Decryptor` / `Pkcs11Encryptor` / `Pkcs11KeyWrapper` | HSM-backed XML-Enc key transport / key wrap |
 
-The ``*_document`` APIs require pyuppsala 0.12.0 or newer. They serialize once
+The ``*_document`` APIs require pyuppsala 0.13.0 or newer. They serialize once
 at the Python-extension boundary (as bytes when pyuppsala offers it) and import
 successful signing results back into the original document, including a
 preserved DOCTYPE; no Rust DOM pointers cross shared libraries. With pyuppsala
 0.13.0 or newer, `sign_enveloped_document` splices only the computed
 `<ds:Signature>` element into the live document instead of replacing it, so
 large aggregates are not re-serialized and re-parsed after signing.
+Signing calls on the same document are serialized against each other; do not
+modify a document through pyuppsala while a `*_document` signing call on it is
+in progress.
 Install both packages with ``pip install 'pybergshamra[documents]'``.
 
 `DsigContext(manager)` uses secure defaults (`trusted_keys_only`,

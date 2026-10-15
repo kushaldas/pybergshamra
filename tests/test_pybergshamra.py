@@ -5,6 +5,8 @@ import os
 from pathlib import Path
 
 import pytest
+import re
+
 import pyuppsala
 
 import pybergshamra
@@ -142,6 +144,19 @@ class TestAlgorithmConstants:
                 f"http://www.aleksey.com/xmlsec/2025/12/xmldsig-more#ml-dsa-{size}"
             )
             assert w3c == f"http://www.w3.org/2026/08/xmldsig-more#ml-dsa-{size}"
+
+    def test_slh_dsa_w3c_identifiers(self):
+        """Both the xmlsec and the W3C SLH-DSA SHA2 identifiers are exposed."""
+        for name in ("128f", "128s", "192f", "192s", "256f", "256s"):
+            xmlsec = getattr(Algorithm, f"SLH_DSA_SHA2_{name.upper()}")
+            w3c = getattr(Algorithm, f"SLH_DSA_SHA2_{name.upper()}_W3C")
+            assert xmlsec == (
+                "http://www.aleksey.com/xmlsec/2025/12/xmldsig-more"
+                f"#slh-dsa-sha2-{name}"
+            )
+            assert w3c == (
+                f"http://www.w3.org/2026/08/xmldsig-more#slh-dsa-sha2-{name}"
+            )
 
     def test_c14n_uri(self):
         assert Algorithm.C14N == "http://www.w3.org/TR/2001/REC-xml-c14n-20010315"
@@ -1561,18 +1576,104 @@ class TestSignEnveloped:
         assert len(results) == 1
         assert results[0].is_valid
 
+    def _sign_concurrently(self, document, workers=4):
+        import threading
+
+        ctx = self._ctx()
+        barrier = threading.Barrier(workers)
+        errors = []
+
+        def worker():
+            try:
+                barrier.wait()
+                pybergshamra.sign_enveloped_document(
+                    ctx, document, reference_id="ABC123"
+                )
+            except Exception as exc:  # pragma: no cover - reported below
+                errors.append(exc)
+
+        threads = [threading.Thread(target=worker) for _ in range(workers)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        assert errors == []
+
+    def _wide_document(self):
+        entities = "".join(
+            f'<md:EntityDescriptor entityID="https://e{i}.example.org"/>'
+            for i in range(200)
+        )
+        return pyuppsala.Document(
+            '<md:EntitiesDescriptor ID="ABC123" '
+            'xmlns:md="urn:oasis:names:tc:SAML:2.0:metadata">'
+            f"{entities}</md:EntitiesDescriptor>"
+        )
+
+    def test_sign_enveloped_document_serializes_concurrent_signers(self):
+        # Regression: two threads signing the same document could both snapshot
+        # the unsigned XML while the GIL was released and both splice their
+        # signature in. Each enveloped signature excludes only itself, so the
+        # newest signature did not cover the others and nothing verified.
+        # pybergshamra now holds the document for the whole snapshot/sign/
+        # update sequence: every signature is spliced over the document as the
+        # previous signer left it, so the newest one (first in document order)
+        # covers all the others and verifies. Earlier ones are invalidated by
+        # the later splices, which is inherent to stacking enveloped
+        # signatures on one element and not what this test is about.
+        document = self._wide_document()
+        workers = 4
+        self._sign_concurrently(document, workers)
+
+        results = pybergshamra.verify_all_document(self._verify_ctx(), document)
+        assert len(results) == workers
+        assert results[0].is_valid, results[0].reason
+        signed = document.to_xml()
+        assert len(re.findall(r"<ds:Signature[\s>]", signed)) == workers
+        assert pybergshamra.verify(self._verify_ctx(), signed).is_valid
+
+    def test_sign_enveloped_document_serializes_concurrent_replacement_path(self):
+        # Same race on the whole-document replacement path (no fragment hook):
+        # an unsynchronized second signer replaced the document with its own
+        # result and silently dropped the first signature. With the document
+        # held per signer every signature survives and the newest verifies.
+        inner = self._wide_document()
+
+        class NoFragmentHook:
+            def __getattr__(self, name):
+                if name == "_prepend_fragment_xml":
+                    raise AttributeError(name)
+                return getattr(inner, name)
+
+        document = NoFragmentHook()
+        workers = 4
+        self._sign_concurrently(document, workers)
+
+        signed = inner.to_xml()
+        assert len(re.findall(r"<ds:Signature[\s>]", signed)) == workers
+        results = pybergshamra.verify_all(self._verify_ctx(), signed)
+        assert len(results) == workers
+        assert results[0].is_valid, results[0].reason
+
     def test_sign_enveloped_document_splices_fragment_and_keeps_proxies(self):
         # With pyuppsala >= 0.13 only the <ds:Signature> fragment is spliced in;
         # existing element proxies stay valid and the result verifies both as a
-        # document and as serialized text.
+        # document and as serialized text. pyuppsala 0.12 has no fragment hook,
+        # so the whole document is replaced and proxies are rebuilt; the result
+        # must still be the same signed tree, only the identity check is
+        # specific to the splice path.
         root = pyuppsala.etree.fromstring(self.DOC)
         document = pyuppsala.etree.native_document(root)
         first_child_before = root[0]
+        splices_fragment = hasattr(document, "_prepend_fragment_xml")
         pybergshamra.sign_enveloped_document(
             self._ctx(), document, reference_id="ABC123"
         )
         assert root[0].tag == "{http://www.w3.org/2000/09/xmldsig#}Signature"
-        assert root[1] is first_child_before
+        assert root[1].tag == first_child_before.tag
+        assert root[1].get("entityID") == first_child_before.get("entityID")
+        if splices_fragment:
+            assert root[1] is first_child_before
         assert pybergshamra.verify_document(self._verify_ctx(), document).is_valid
         signed = pyuppsala.etree.tostring(root, encoding="unicode")
         assert pybergshamra.verify(self._verify_ctx(), signed).is_valid

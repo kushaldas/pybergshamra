@@ -690,13 +690,20 @@ pub fn sign(py: Python<'_>, ctx: &DsigContext, template_xml: &str) -> PyResult<S
 /// Sign an existing XML-DSig template in a pyuppsala Document through owned XML.
 ///
 /// The document is mutated in place and must already contain empty
-/// `<DigestValue>` and `<SignatureValue>` elements.
+/// `<DigestValue>` and `<SignatureValue>` elements. pybergshamra's own
+/// operations on the same document are serialized: a concurrent
+/// ``sign_document`` / ``sign_enveloped_document`` call waits until this one
+/// has updated the document. The caller must not mutate the document through
+/// pyuppsala while the call is in progress.
 #[pyfunction]
 pub fn sign_document(
     py: Python<'_>,
     ctx: &DsigContext,
     document: &Bound<'_, PyAny>,
 ) -> PyResult<()> {
+    // Hold the document for the whole snapshot/sign/update sequence; see
+    // `doclock` for why two concurrent signers must not interleave.
+    let _busy = crate::doclock::acquire(py, document);
     let xml = document_xml(document)?;
     let replace_xml = document_replace_hook(document)?;
     let rust_ctx = ctx.to_rust()?;
@@ -829,6 +836,12 @@ fn sign_enveloped_with_context(
 }
 
 /// Build and sign an enveloped signature in a pyuppsala Document via owned XML.
+///
+/// pybergshamra's own operations on the same document are serialized: a
+/// concurrent ``sign_document`` / ``sign_enveloped_document`` call waits
+/// until this one has spliced its signature in, so each later signature
+/// covers the earlier ones. The caller must not mutate the document through
+/// pyuppsala while the call is in progress.
 #[pyfunction]
 #[pyo3(signature = (ctx, document, *, reference_id=None, signature_method=None, digest_method=None, c14n_method=None, cert_pem=None))]
 #[allow(clippy::too_many_arguments)]
@@ -842,6 +855,9 @@ pub fn sign_enveloped_document(
     c14n_method: Option<&str>,
     cert_pem: Option<&str>,
 ) -> PyResult<()> {
+    // Hold the document for the whole snapshot/sign/update sequence; see
+    // `doclock` for why two concurrent signers must not interleave.
+    let _busy = crate::doclock::acquire(py, document);
     let xml = document_xml(document)?;
     // Preferred hook: splice only the computed <ds:Signature> fragment into the
     // live document (pyuppsala >= 0.13). Fallback: replace the whole document
