@@ -144,7 +144,7 @@ jobs:
         #curl -LsSf https://astral.sh/uv/install.sh | sh
         #uv venv --python python3.14
         #source .venv/bin/activate
-        #uv pip install --upgrade "maturin>=1,<2" pytest
+        #uv pip install --upgrade "maturin>=1,<2" pytest "pyuppsala>=0.13.0"
 
     #- name: Build wheel
       #run: |
@@ -190,7 +190,7 @@ jobs:
 
     #- name: Build environment
       #run: |
-        #python.exe -m pip install --upgrade pip "maturin>=1,<2" pytest
+        #python.exe -m pip install --upgrade pip "maturin>=1,<2" pytest "pyuppsala>=0.13.0"
 
     #- name: Build wheel
       #run: |
@@ -238,7 +238,7 @@ jobs:
 
     #- name: Build environment
       #run: |
-        #python.exe -m pip install --upgrade pip "maturin>=1,<2" pytest
+        #python.exe -m pip install --upgrade pip "maturin>=1,<2" pytest "pyuppsala>=0.13.0"
 
     #- name: Build wheel
       #run: |
