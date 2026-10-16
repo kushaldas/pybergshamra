@@ -117,8 +117,12 @@ pub fn canonicalize<'py>(
     inclusive_prefixes: Option<Vec<String>>,
 ) -> PyResult<Bound<'py, pyo3::types::PyBytes>> {
     let prefixes = inclusive_prefixes.unwrap_or_default();
-    let result =
-        rust_canonicalize(xml, RustC14nMode::from(mode), None, &prefixes).map_err(to_pyerr)?;
+    // GIL released for the parse + canonicalize pass (PyO3 lesson: CPU-bound
+    // Rust work must not block other Python threads).
+    let xml = xml.to_owned();
+    let result = py
+        .detach(move || rust_canonicalize(&xml, RustC14nMode::from(mode), None, &prefixes))
+        .map_err(to_pyerr)?;
     Ok(pyo3::types::PyBytes::new(py, &result))
 }
 
@@ -150,27 +154,32 @@ pub fn canonicalize_subtree<'py>(
 ) -> PyResult<Bound<'py, pyo3::types::PyBytes>> {
     let prefixes = inclusive_prefixes.unwrap_or_default();
 
-    // Parse with bergshamra_xml to get ID map and inner roxmltree doc
-    let xml_doc = XmlDocument::parse(xml.to_string()).map_err(to_pyerr)?;
-    let doc = xml_doc.parse_doc().map_err(to_pyerr)?;
-    let id_map = xml_doc.build_id_map(&doc).map_err(to_pyerr)?;
-    let node_id = XmlDocument::find_by_id(&doc, &id_map, element_id).ok_or_else(|| {
-        pyo3::exceptions::PyValueError::new_err(format!(
-            "Element with ID '{}' not found",
-            element_id
-        ))
+    // GIL released for the parse + node-set + canonicalize pass (PyO3 lesson 13).
+    let xml = xml.to_owned();
+    let element_id = element_id.to_owned();
+    let result = py.detach(move || -> Result<Vec<u8>, pyo3::PyErr> {
+        // Parse with bergshamra_xml to get ID map and inner roxmltree doc
+        let xml_doc = XmlDocument::parse(xml).map_err(to_pyerr)?;
+        let doc = xml_doc.parse_doc().map_err(to_pyerr)?;
+        let id_map = xml_doc.build_id_map(&doc).map_err(to_pyerr)?;
+        let node_id = XmlDocument::find_by_id(&doc, &id_map, &element_id).ok_or_else(|| {
+            pyo3::exceptions::PyValueError::new_err(format!(
+                "Element with ID '{}' not found",
+                element_id
+            ))
+        })?;
+
+        // Build subtree node set
+        let node_set = NodeSet::tree_without_comments(node_id, &doc);
+
+        // Canonicalize with node set
+        bergshamra_c14n::canonicalize_doc(
+            &doc,
+            RustC14nMode::from(mode),
+            Some(&node_set),
+            &prefixes,
+        )
+        .map_err(to_pyerr)
     })?;
-
-    // Build subtree node set
-    let node_set = NodeSet::tree_without_comments(node_id, &doc);
-
-    // Canonicalize with node set
-    let result = bergshamra_c14n::canonicalize_doc(
-        &doc,
-        RustC14nMode::from(mode),
-        Some(&node_set),
-        &prefixes,
-    )
-    .map_err(to_pyerr)?;
     Ok(pyo3::types::PyBytes::new(py, &result))
 }

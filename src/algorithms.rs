@@ -255,6 +255,21 @@ impl Algorithm {
     fn ML_DSA_87() -> &'static str {
         algorithm::ML_DSA_87
     }
+    // W3C xmldsig-more (2026/08) spellings of the same parameter sets. Both
+    // spellings are accepted for signing and verification; a template keeps
+    // the one it declares.
+    #[classattr]
+    fn ML_DSA_44_W3C() -> &'static str {
+        algorithm::ML_DSA_44_W3C
+    }
+    #[classattr]
+    fn ML_DSA_65_W3C() -> &'static str {
+        algorithm::ML_DSA_65_W3C
+    }
+    #[classattr]
+    fn ML_DSA_87_W3C() -> &'static str {
+        algorithm::ML_DSA_87_W3C
+    }
 
     // -- SLH-DSA Post-Quantum (6) ---------------------------------------------
     #[classattr]
@@ -280,6 +295,31 @@ impl Algorithm {
     #[classattr]
     fn SLH_DSA_SHA2_256S() -> &'static str {
         algorithm::SLH_DSA_SHA2_256S
+    }
+    // W3C xmldsig-more (2026/08) spellings of the same SHA2 parameter sets.
+    #[classattr]
+    fn SLH_DSA_SHA2_128F_W3C() -> &'static str {
+        algorithm::SLH_DSA_SHA2_128F_W3C
+    }
+    #[classattr]
+    fn SLH_DSA_SHA2_128S_W3C() -> &'static str {
+        algorithm::SLH_DSA_SHA2_128S_W3C
+    }
+    #[classattr]
+    fn SLH_DSA_SHA2_192F_W3C() -> &'static str {
+        algorithm::SLH_DSA_SHA2_192F_W3C
+    }
+    #[classattr]
+    fn SLH_DSA_SHA2_192S_W3C() -> &'static str {
+        algorithm::SLH_DSA_SHA2_192S_W3C
+    }
+    #[classattr]
+    fn SLH_DSA_SHA2_256F_W3C() -> &'static str {
+        algorithm::SLH_DSA_SHA2_256F_W3C
+    }
+    #[classattr]
+    fn SLH_DSA_SHA2_256S_W3C() -> &'static str {
+        algorithm::SLH_DSA_SHA2_256S_W3C
     }
 
     // -- Block Cipher (7) -----------------------------------------------------

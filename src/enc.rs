@@ -162,18 +162,30 @@ impl EncContext {
 /// The template must contain an ``<EncryptedData>`` element with an
 /// empty ``<CipherValue>``. Returns the XML with encrypted content.
 #[pyfunction]
-pub fn encrypt(ctx: &EncContext, template_xml: &str, data: &[u8]) -> PyResult<String> {
+pub fn encrypt(
+    py: Python<'_>,
+    ctx: &EncContext,
+    template_xml: &str,
+    data: &[u8],
+) -> PyResult<String> {
     let rust_ctx = ctx.to_rust()?;
-    bergshamra_enc::encrypt::encrypt(&rust_ctx, template_xml, data).map_err(to_pyerr)
+    // GIL released for the CPU-bound Rust work (PyO3 lesson 13).
+    let template = template_xml.to_owned();
+    let data = data.to_vec();
+    py.detach(move || bergshamra_enc::encrypt::encrypt(&rust_ctx, &template, &data))
+        .map_err(to_pyerr)
 }
 
 /// Decrypt an XML document containing ``<EncryptedData>``.
 ///
 /// Returns the decrypted XML as a string.
 #[pyfunction]
-pub fn decrypt(ctx: &EncContext, xml: &str) -> PyResult<String> {
+pub fn decrypt(py: Python<'_>, ctx: &EncContext, xml: &str) -> PyResult<String> {
     let rust_ctx = ctx.to_rust()?;
-    bergshamra_enc::decrypt::decrypt(&rust_ctx, xml).map_err(to_pyerr)
+    // GIL released for the CPU-bound Rust work (PyO3 lesson 13).
+    let xml = xml.to_owned();
+    py.detach(move || bergshamra_enc::decrypt::decrypt(&rust_ctx, &xml))
+        .map_err(to_pyerr)
 }
 
 /// Decrypt an XML document containing ``<EncryptedData>``.
@@ -186,6 +198,10 @@ pub fn decrypt_to_bytes<'py>(
     xml: &str,
 ) -> PyResult<Bound<'py, pyo3::types::PyBytes>> {
     let rust_ctx = ctx.to_rust()?;
-    let bytes = bergshamra_enc::decrypt::decrypt_to_bytes(&rust_ctx, xml).map_err(to_pyerr)?;
+    // GIL released for the CPU-bound Rust work (PyO3 lesson 13).
+    let xml = xml.to_owned();
+    let bytes = py
+        .detach(move || bergshamra_enc::decrypt::decrypt_to_bytes(&rust_ctx, &xml))
+        .map_err(to_pyerr)?;
     Ok(pyo3::types::PyBytes::new(py, &bytes))
 }

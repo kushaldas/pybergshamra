@@ -13,7 +13,10 @@ Or with `uv <https://docs.astral.sh/uv/>`_::
     uv add pybergshamra
 
 Requirements: Python 3.10 or later. No C compiler needed -- the package ships
-pre-built wheels compiled from Rust.
+pre-built wheels compiled from Rust. The ``*_document`` functions that work on
+a ``pyuppsala.Document`` need pyuppsala 0.13.0 or newer::
+
+    pip install 'pybergshamra[documents]'
 
 Load a key
 ----------

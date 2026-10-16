@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any, Optional, TypeAlias
 
 # The document-native APIs (``verify_document``, ``sign_document``, ...) accept
-# a ``pyuppsala.Document`` (pyuppsala >= 0.11.0). pyuppsala is an optional
+# a ``pyuppsala.Document`` (pyuppsala >= 0.13.0). pyuppsala is an optional
 # dependency (the ``documents`` extra), so the stubs do not import it -- a hard
 # import would break type checking for installs without the extra. The alias
 # keeps the signatures readable while degrading to ``Any``.
@@ -142,6 +142,10 @@ class Algorithm:
     ML_DSA_44: str
     ML_DSA_65: str
     ML_DSA_87: str
+    # W3C 2026/08/xmldsig-more spellings of the same parameter sets.
+    ML_DSA_44_W3C: str
+    ML_DSA_65_W3C: str
+    ML_DSA_87_W3C: str
 
     # SLH-DSA Post-Quantum (6)
     SLH_DSA_SHA2_128F: str
@@ -150,6 +154,13 @@ class Algorithm:
     SLH_DSA_SHA2_192S: str
     SLH_DSA_SHA2_256F: str
     SLH_DSA_SHA2_256S: str
+    # W3C 2026/08/xmldsig-more spellings of the same SHA2 parameter sets.
+    SLH_DSA_SHA2_128F_W3C: str
+    SLH_DSA_SHA2_128S_W3C: str
+    SLH_DSA_SHA2_192F_W3C: str
+    SLH_DSA_SHA2_192S_W3C: str
+    SLH_DSA_SHA2_256F_W3C: str
+    SLH_DSA_SHA2_256S_W3C: str
 
     # Block Cipher (7)
     AES128_CBC: str

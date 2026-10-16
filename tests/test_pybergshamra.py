@@ -5,6 +5,9 @@ import os
 from pathlib import Path
 
 import pytest
+import re
+
+import pyuppsala
 
 import pybergshamra
 from pybergshamra import (
@@ -131,6 +134,29 @@ class TestAlgorithmConstants:
 
     def test_aes128_cbc_uri(self):
         assert Algorithm.AES128_CBC == "http://www.w3.org/2001/04/xmlenc#aes128-cbc"
+
+    def test_ml_dsa_w3c_identifiers(self):
+        """Both the xmlsec and the W3C ML-DSA identifiers are exposed."""
+        for size in ("44", "65", "87"):
+            xmlsec = getattr(Algorithm, f"ML_DSA_{size}")
+            w3c = getattr(Algorithm, f"ML_DSA_{size}_W3C")
+            assert xmlsec == (
+                f"http://www.aleksey.com/xmlsec/2025/12/xmldsig-more#ml-dsa-{size}"
+            )
+            assert w3c == f"http://www.w3.org/2026/08/xmldsig-more#ml-dsa-{size}"
+
+    def test_slh_dsa_w3c_identifiers(self):
+        """Both the xmlsec and the W3C SLH-DSA SHA2 identifiers are exposed."""
+        for name in ("128f", "128s", "192f", "192s", "256f", "256s"):
+            xmlsec = getattr(Algorithm, f"SLH_DSA_SHA2_{name.upper()}")
+            w3c = getattr(Algorithm, f"SLH_DSA_SHA2_{name.upper()}_W3C")
+            assert xmlsec == (
+                "http://www.aleksey.com/xmlsec/2025/12/xmldsig-more"
+                f"#slh-dsa-sha2-{name}"
+            )
+            assert w3c == (
+                f"http://www.w3.org/2026/08/xmldsig-more#slh-dsa-sha2-{name}"
+            )
 
     def test_c14n_uri(self):
         assert Algorithm.C14N == "http://www.w3.org/TR/2001/REC-xml-c14n-20010315"
@@ -1483,9 +1509,7 @@ class TestSignEnveloped:
         assert pybergshamra.verify(self._verify_ctx(), signed).is_valid
 
     def test_sign_and_verify_pyuppsala_document_in_place(self):
-        # Document tests need the optional pyuppsala peer with the owned XML
-        # replacement hook (>= 0.11.0); skip where it is not installed.
-        Document = pytest.importorskip("pyuppsala").Document
+        Document = pyuppsala.Document
 
         document = Document(self.DOC)
         old_root = document.document_element
@@ -1505,7 +1529,6 @@ class TestSignEnveloped:
         assert pybergshamra.verify(self._verify_ctx(), signed).is_valid
 
     def test_signing_native_etree_document_updates_existing_root_proxy(self):
-        pyuppsala = pytest.importorskip("pyuppsala")
         root = pyuppsala.etree.fromstring(self.DOC)
         document = pyuppsala.etree.native_document(root)
 
@@ -1518,7 +1541,7 @@ class TestSignEnveloped:
         assert pybergshamra.verify(self._verify_ctx(), signed).is_valid
 
     def test_signing_pyuppsala_document_preserves_doctype(self):
-        Document = pytest.importorskip("pyuppsala").Document
+        Document = pyuppsala.Document
         doctype = '<!DOCTYPE md:EntitiesDescriptor SYSTEM "metadata.dtd">'
         document = Document(f"{doctype}{self.DOC}")
 
@@ -1532,7 +1555,7 @@ class TestSignEnveloped:
         assert pybergshamra.verify_document(self._verify_ctx(), document).is_valid
 
     def test_failed_document_signing_leaves_document_unchanged(self):
-        Document = pytest.importorskip("pyuppsala").Document
+        Document = pyuppsala.Document
         document = Document(self.DOC)
         before = document.to_xml_with_options(include_doctype=True)
 
@@ -1544,9 +1567,7 @@ class TestSignEnveloped:
         assert document.to_xml_with_options(include_doctype=True) == before
 
     def test_verify_all_pyuppsala_document(self):
-        # Document tests need the optional pyuppsala peer with the owned XML
-        # replacement hook (>= 0.11.0); skip where it is not installed.
-        Document = pytest.importorskip("pyuppsala").Document
+        Document = pyuppsala.Document
 
         document = Document(self.DOC)
         pybergshamra.sign_enveloped_document(self._ctx(), document)
@@ -1554,6 +1575,150 @@ class TestSignEnveloped:
         results = pybergshamra.verify_all_document(self._verify_ctx(), document)
         assert len(results) == 1
         assert results[0].is_valid
+
+    def _sign_concurrently(self, document, workers=4):
+        import threading
+
+        ctx = self._ctx()
+        barrier = threading.Barrier(workers)
+        errors = []
+
+        def worker():
+            try:
+                barrier.wait()
+                pybergshamra.sign_enveloped_document(
+                    ctx, document, reference_id="ABC123"
+                )
+            except Exception as exc:  # pragma: no cover - reported below
+                errors.append(exc)
+
+        threads = [threading.Thread(target=worker) for _ in range(workers)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        assert errors == []
+
+    def _wide_document(self):
+        entities = "".join(
+            f'<md:EntityDescriptor entityID="https://e{i}.example.org"/>'
+            for i in range(200)
+        )
+        return pyuppsala.Document(
+            '<md:EntitiesDescriptor ID="ABC123" '
+            'xmlns:md="urn:oasis:names:tc:SAML:2.0:metadata">'
+            f"{entities}</md:EntitiesDescriptor>"
+        )
+
+    def test_sign_enveloped_document_serializes_concurrent_signers(self):
+        # Regression: two threads signing the same document could both snapshot
+        # the unsigned XML while the GIL was released and both splice their
+        # signature in. Each enveloped signature excludes only itself, so the
+        # newest signature did not cover the others and nothing verified.
+        # pybergshamra now holds the document for the whole snapshot/sign/
+        # update sequence: every signature is spliced over the document as the
+        # previous signer left it, so the newest one (first in document order)
+        # covers all the others and verifies. Earlier ones are invalidated by
+        # the later splices, which is inherent to stacking enveloped
+        # signatures on one element and not what this test is about.
+        document = self._wide_document()
+        workers = 4
+        self._sign_concurrently(document, workers)
+
+        results = pybergshamra.verify_all_document(self._verify_ctx(), document)
+        assert len(results) == workers
+        assert results[0].is_valid, results[0].reason
+        signed = document.to_xml()
+        assert len(re.findall(r"<ds:Signature[\s>]", signed)) == workers
+        assert pybergshamra.verify(self._verify_ctx(), signed).is_valid
+
+    def test_sign_enveloped_document_serializes_concurrent_replacement_path(self):
+        # Same race on the whole-document replacement path (no fragment hook):
+        # an unsynchronized second signer replaced the document with its own
+        # result and silently dropped the first signature. With the document
+        # held per signer every signature survives and the newest verifies.
+        inner = self._wide_document()
+
+        class NoFragmentHook:
+            def __getattr__(self, name):
+                if name == "_prepend_fragment_xml":
+                    raise AttributeError(name)
+                return getattr(inner, name)
+
+        document = NoFragmentHook()
+        workers = 4
+        self._sign_concurrently(document, workers)
+
+        signed = inner.to_xml()
+        assert len(re.findall(r"<ds:Signature[\s>]", signed)) == workers
+        results = pybergshamra.verify_all(self._verify_ctx(), signed)
+        assert len(results) == workers
+        assert results[0].is_valid, results[0].reason
+
+    def test_sign_enveloped_document_ignores_non_callable_fragment_hook(self):
+        # Regression: an adapter exposing `_prepend_fragment_xml = None` next to
+        # a working `_replace_xml` selected the fragment path, computed the
+        # signature, and then raised TypeError calling None, wasting a possibly
+        # HSM-backed signing operation. Only a callable hook selects the
+        # fragment path; anything else uses whole-document replacement.
+        inner = pyuppsala.Document(self.DOC)
+        replace_calls = []
+
+        class NoneFragmentHook:
+            _prepend_fragment_xml = None
+
+            def __getattr__(self, name):
+                return getattr(inner, name)
+
+            def _replace_xml(self, xml):
+                replace_calls.append(xml)
+                return inner._replace_xml(xml)
+
+        pybergshamra.sign_enveloped_document(
+            self._ctx(), NoneFragmentHook(), reference_id="ABC123"
+        )
+        assert len(replace_calls) == 1
+        assert pybergshamra.verify_document(self._verify_ctx(), inner).is_valid
+
+    def test_sign_enveloped_document_splices_fragment_and_keeps_proxies(self):
+        # With pyuppsala >= 0.13 only the <ds:Signature> fragment is spliced in;
+        # existing element proxies stay valid and the result verifies both as a
+        # document and as serialized text. pyuppsala 0.12 has no fragment hook,
+        # so the whole document is replaced and proxies are rebuilt; the result
+        # must still be the same signed tree, only the identity check is
+        # specific to the splice path.
+        root = pyuppsala.etree.fromstring(self.DOC)
+        document = pyuppsala.etree.native_document(root)
+        first_child_before = root[0]
+        splices_fragment = hasattr(document, "_prepend_fragment_xml")
+        pybergshamra.sign_enveloped_document(
+            self._ctx(), document, reference_id="ABC123"
+        )
+        assert root[0].tag == "{http://www.w3.org/2000/09/xmldsig#}Signature"
+        assert root[1].tag == first_child_before.tag
+        assert root[1].get("entityID") == first_child_before.get("entityID")
+        if splices_fragment:
+            assert root[1] is first_child_before
+        assert pybergshamra.verify_document(self._verify_ctx(), document).is_valid
+        signed = pyuppsala.etree.tostring(root, encoding="unicode")
+        assert pybergshamra.verify(self._verify_ctx(), signed).is_valid
+        if hasattr(document, "_prepend_fragment_xml"):
+            # The fragment path never calls the whole-document replacement hook.
+            calls = []
+            document2 = pyuppsala.Document(self.DOC)
+            original = document2._replace_xml
+
+            class Spy:
+                def __getattr__(self, name):
+                    return getattr(document2, name)
+
+                def _replace_xml(self, xml):
+                    calls.append(xml)
+                    return original(xml)
+
+            pybergshamra.sign_enveloped_document(self._ctx(), Spy(), reference_id="ABC123")
+            assert calls == []
+            assert pybergshamra.verify_document(self._verify_ctx(), document2).is_valid
 
     def test_document_api_rejects_non_pyuppsala_object(self):
         with pytest.raises(TypeError, match="pyuppsala.Document"):

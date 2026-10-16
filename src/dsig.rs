@@ -2,6 +2,7 @@
 
 use pyo3::exceptions::PyTypeError;
 use pyo3::prelude::*;
+use pyo3::pybacked::PyBackedBytes;
 use pyo3::types::{PyAny, PyDict};
 
 use crate::errors::to_pyerr;
@@ -542,16 +543,48 @@ impl DsigContext {
 // Module-level functions
 // ---------------------------------------------------------------------------
 
+/// Owned XML received from a pyuppsala document: a `bytes` buffer when the
+/// document offers one (one copy out of the native serializer, no Python
+/// `str` decode/encode round trip for multi-megabyte documents), otherwise a
+/// `str`. Both forms are `Send`, so they cross the detached-GIL boundary.
+enum DocumentXml {
+    Bytes(PyBackedBytes),
+    Text(String),
+}
+
+impl DocumentXml {
+    fn as_str(&self) -> Result<&str, bergshamra_core::Error> {
+        match self {
+            DocumentXml::Bytes(bytes) => std::str::from_utf8(bytes).map_err(|e| {
+                bergshamra_core::Error::XmlParse(format!("document bytes are not UTF-8: {e}"))
+            }),
+            DocumentXml::Text(text) => Ok(text),
+        }
+    }
+}
+
 /// Serialize a pyuppsala document without accessing its Rust-owned internals.
-fn document_xml(document: &Bound<'_, PyAny>) -> PyResult<String> {
+fn document_xml(document: &Bound<'_, PyAny>) -> PyResult<DocumentXml> {
+    let kwargs = PyDict::new(document.py());
+    kwargs.set_item("include_doctype", true)?;
+    if let Ok(to_bytes) = document.getattr("to_xml_bytes_with_options") {
+        let bytes = to_bytes
+            .call((), Some(&kwargs))?
+            .extract::<PyBackedBytes>()
+            .map_err(|_| {
+                PyTypeError::new_err(
+                    "pyuppsala.Document.to_xml_bytes_with_options() must return bytes",
+                )
+            })?;
+        return Ok(DocumentXml::Bytes(bytes));
+    }
     let to_xml = document
         .getattr("to_xml_with_options")
         .map_err(|_| PyTypeError::new_err("document must be a pyuppsala.Document"))?;
-    let kwargs = PyDict::new(document.py());
-    kwargs.set_item("include_doctype", true)?;
     to_xml
         .call((), Some(&kwargs))?
         .extract::<String>()
+        .map(DocumentXml::Text)
         .map_err(|_| {
             PyTypeError::new_err("pyuppsala.Document.to_xml_with_options() must return str")
         })
@@ -579,9 +612,13 @@ fn replace_document(replace_xml: &Bound<'_, PyAny>, xml: &str) -> PyResult<()> {
 /// that require every reference digest to be checked locally should also inspect
 /// ``all_reference_digests_verified`` / ``has_unverified_references``.
 #[pyfunction]
-pub fn verify(ctx: &DsigContext, xml: &str) -> PyResult<VerifyResult> {
+pub fn verify(py: Python<'_>, ctx: &DsigContext, xml: &str) -> PyResult<VerifyResult> {
     let rust_ctx = ctx.to_rust()?;
-    let result = bergshamra_dsig::verify::verify(&rust_ctx, xml).map_err(to_pyerr)?;
+    // Release the GIL for the CPU-bound Rust work so other Python threads can
+    // run concurrently (PyO3 lesson: cross the boundary once, work unlocked).
+    let result = py
+        .detach(move || bergshamra_dsig::verify::verify(&rust_ctx, xml))
+        .map_err(to_pyerr)?;
     Ok(VerifyResult::from(result))
 }
 
@@ -595,7 +632,7 @@ pub fn verify_document(
     let xml = document_xml(document)?;
     let rust_ctx = ctx.to_rust()?;
     let result = py
-        .detach(move || bergshamra_dsig::verify::verify(&rust_ctx, &xml))
+        .detach(move || bergshamra_dsig::verify::verify(&rust_ctx, xml.as_str()?))
         .map_err(to_pyerr)?;
     Ok(VerifyResult::from(result))
 }
@@ -614,9 +651,12 @@ pub fn verify_document(
 /// Raises an error only for document-level failures (parse error, duplicate-ID
 /// conflict, or no `<Signature>` element at all).
 #[pyfunction]
-pub fn verify_all(ctx: &DsigContext, xml: &str) -> PyResult<Vec<VerifyResult>> {
+pub fn verify_all(py: Python<'_>, ctx: &DsigContext, xml: &str) -> PyResult<Vec<VerifyResult>> {
     let rust_ctx = ctx.to_rust()?;
-    let results = bergshamra_dsig::verify::verify_all(&rust_ctx, xml).map_err(to_pyerr)?;
+    // GIL released for the same reason as `verify`.
+    let results = py
+        .detach(move || bergshamra_dsig::verify::verify_all(&rust_ctx, xml))
+        .map_err(to_pyerr)?;
     Ok(results.into_iter().map(VerifyResult::from).collect())
 }
 
@@ -630,7 +670,7 @@ pub fn verify_all_document(
     let xml = document_xml(document)?;
     let rust_ctx = ctx.to_rust()?;
     let results = py
-        .detach(move || bergshamra_dsig::verify::verify_all(&rust_ctx, &xml))
+        .detach(move || bergshamra_dsig::verify::verify_all(&rust_ctx, xml.as_str()?))
         .map_err(to_pyerr)?;
     Ok(results.into_iter().map(VerifyResult::from).collect())
 }
@@ -640,27 +680,36 @@ pub fn verify_all_document(
 /// The template must contain a `<Signature>` skeleton with
 /// `<SignedInfo>`, `<Reference>`, etc.
 #[pyfunction]
-pub fn sign(ctx: &DsigContext, template_xml: &str) -> PyResult<String> {
+pub fn sign(py: Python<'_>, ctx: &DsigContext, template_xml: &str) -> PyResult<String> {
     let rust_ctx = ctx.to_rust()?;
-    bergshamra_dsig::sign::sign(&rust_ctx, template_xml).map_err(to_pyerr)
+    // GIL released: signing is CPU-bound Rust work (parse, C14N, digest, sign).
+    py.detach(move || bergshamra_dsig::sign::sign(&rust_ctx, template_xml))
+        .map_err(to_pyerr)
 }
 
 /// Sign an existing XML-DSig template in a pyuppsala Document through owned XML.
 ///
 /// The document is mutated in place and must already contain empty
-/// `<DigestValue>` and `<SignatureValue>` elements.
+/// `<DigestValue>` and `<SignatureValue>` elements. pybergshamra's own
+/// operations on the same document are serialized: a concurrent
+/// ``sign_document`` / ``sign_enveloped_document`` call waits until this one
+/// has updated the document. The caller must not mutate the document through
+/// pyuppsala while the call is in progress.
 #[pyfunction]
 pub fn sign_document(
     py: Python<'_>,
     ctx: &DsigContext,
     document: &Bound<'_, PyAny>,
 ) -> PyResult<()> {
+    // Hold the document for the whole snapshot/sign/update sequence; see
+    // `doclock` for why two concurrent signers must not interleave.
+    let _busy = crate::doclock::acquire(py, document);
     let xml = document_xml(document)?;
     let replace_xml = document_replace_hook(document)?;
     let rust_ctx = ctx.to_rust()?;
     let signed = py
         .detach(move || {
-            let mut doc = uppsala::parse(&xml)
+            let mut doc = uppsala::parse(xml.as_str()?)
                 .map_err(|e| bergshamra_core::Error::XmlParse(e.to_string()))?;
             bergshamra_dsig::sign::sign_document(&rust_ctx, &mut doc)?;
             let options = uppsala::XmlWriteOptions::compact().with_doctype(true);
@@ -700,6 +749,7 @@ pub fn sign_document(
 #[pyo3(signature = (ctx, xml, *, reference_id=None, signature_method=None, digest_method=None, c14n_method=None, cert_pem=None))]
 #[allow(clippy::too_many_arguments)]
 pub fn sign_enveloped(
+    py: Python<'_>,
     ctx: &DsigContext,
     xml: &str,
     reference_id: Option<&str>,
@@ -709,15 +759,24 @@ pub fn sign_enveloped(
     cert_pem: Option<&str>,
 ) -> PyResult<String> {
     let rust_ctx = ctx.to_rust()?;
-    sign_enveloped_with_context(
-        &rust_ctx,
-        xml,
-        reference_id,
-        signature_method,
-        digest_method,
-        c14n_method,
-        cert_pem,
-    )
+    // Validation is cheap; the parse/C14N/digest/sign work happens with the
+    // GIL released (owned copies moved into the closure).
+    let reference_id = reference_id.map(str::to_owned);
+    let signature_method = signature_method.map(str::to_owned);
+    let digest_method = digest_method.map(str::to_owned);
+    let c14n_method = c14n_method.map(str::to_owned);
+    let cert_pem = cert_pem.map(str::to_owned);
+    py.detach(move || {
+        sign_enveloped_with_context(
+            &rust_ctx,
+            xml,
+            reference_id.as_deref(),
+            signature_method.as_deref(),
+            digest_method.as_deref(),
+            c14n_method.as_deref(),
+            cert_pem.as_deref(),
+        )
+    })
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -777,6 +836,12 @@ fn sign_enveloped_with_context(
 }
 
 /// Build and sign an enveloped signature in a pyuppsala Document via owned XML.
+///
+/// pybergshamra's own operations on the same document are serialized: a
+/// concurrent ``sign_document`` / ``sign_enveloped_document`` call waits
+/// until this one has spliced its signature in, so each later signature
+/// covers the earlier ones. The caller must not mutate the document through
+/// pyuppsala while the call is in progress.
 #[pyfunction]
 #[pyo3(signature = (ctx, document, *, reference_id=None, signature_method=None, digest_method=None, c14n_method=None, cert_pem=None))]
 #[allow(clippy::too_many_arguments)]
@@ -790,8 +855,26 @@ pub fn sign_enveloped_document(
     c14n_method: Option<&str>,
     cert_pem: Option<&str>,
 ) -> PyResult<()> {
+    // Hold the document for the whole snapshot/sign/update sequence; see
+    // `doclock` for why two concurrent signers must not interleave.
+    let _busy = crate::doclock::acquire(py, document);
     let xml = document_xml(document)?;
-    let replace_xml = document_replace_hook(document)?;
+    // Preferred hook: splice only the computed <ds:Signature> fragment into the
+    // live document (pyuppsala >= 0.13). Fallback: replace the whole document
+    // through owned XML. Both are resolved before signing so a missing hook
+    // is reported before any (possibly HSM-backed) signature is produced.
+    // The fragment hook is optional, so only a callable attribute selects it;
+    // an adapter that sets it to None (or any non-callable) takes the
+    // replacement path instead of failing after the signature is computed.
+    let prepend_fragment = document
+        .getattr("_prepend_fragment_xml")
+        .ok()
+        .filter(|hook| hook.is_callable());
+    let replace_xml = match &prepend_fragment {
+        Some(_) => None,
+        None => Some(document_replace_hook(document)?),
+    };
+    let use_fragment = prepend_fragment.is_some();
     let rust_ctx = ctx.to_rust()?;
 
     // Python strings may be borrowed by the `&str` arguments, so own every
@@ -802,11 +885,11 @@ pub fn sign_enveloped_document(
     let c14n_method = c14n_method.map(str::to_owned);
     let cert_pem = cert_pem.map(str::to_owned);
     let key_info = build_key_info(cert_pem.as_deref())?;
-    let signed = py
+    let out = py
         .detach(move || {
             use bergshamra_core::algorithm;
 
-            let mut doc = uppsala::parse(&xml)
+            let mut doc = uppsala::parse(xml.as_str()?)
                 .map_err(|e| bergshamra_core::Error::XmlParse(e.to_string()))?;
             let options = bergshamra_dsig::sign::EnvelopedSignatureOptions::new(
                 reference_id.as_deref(),
@@ -815,12 +898,31 @@ pub fn sign_enveloped_document(
                 c14n_method.as_deref().unwrap_or(algorithm::EXC_C14N),
                 Some(&key_info),
             );
-            bergshamra_dsig::sign::sign_enveloped_document(&rust_ctx, &mut doc, options)?;
-            let write_options = uppsala::XmlWriteOptions::compact().with_doctype(true);
-            Ok::<String, bergshamra_core::Error>(doc.to_xml_with_options(&write_options))
+            let signature = bergshamra_dsig::sign::sign_enveloped_document_with_node(
+                &rust_ctx, &mut doc, options,
+            )?;
+            if use_fragment {
+                // The signature is the document element's first child and
+                // declares its own xmlns:ds, so the fragment re-parses on its
+                // own; the caller's tree is otherwise untouched.
+                let compact = uppsala::XmlWriteOptions::compact();
+                Ok::<String, bergshamra_core::Error>(
+                    doc.node_to_xml_with_options(signature, &compact),
+                )
+            } else {
+                let write_options = uppsala::XmlWriteOptions::compact().with_doctype(true);
+                Ok::<String, bergshamra_core::Error>(doc.to_xml_with_options(&write_options))
+            }
         })
         .map_err(to_pyerr)?;
-    replace_document(&replace_xml, &signed)
+    match (prepend_fragment, replace_xml) {
+        (Some(hook), _) => {
+            hook.call1((out,))?;
+            Ok(())
+        }
+        (None, Some(replace_xml)) => replace_document(&replace_xml, &out),
+        (None, None) => unreachable!("one document hook is always resolved"),
+    }
 }
 
 fn validate_signature_method(uri: &str) -> PyResult<&str> {

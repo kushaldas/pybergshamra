@@ -1,6 +1,37 @@
 API reference
 =============
 
+Threads and the GIL
+-------------------
+
+Every CPU-bound entry point releases the GIL while the Rust work runs:
+:func:`verify`, :func:`verify_all`, :func:`sign`, :func:`sign_enveloped`, the
+``*_document`` variants, :func:`canonicalize`, :func:`canonicalize_subtree`,
+:func:`encrypt`, :func:`decrypt`, and :func:`decrypt_to_bytes`. Calling them
+from a thread pool therefore scales across cores. Measurements are in the
+repository's ``docs/performance/`` notes.
+
+Functions that take ``str`` or ``bytes`` copy their arguments before the GIL
+is released, so those values are never read concurrently.
+
+The ``*_document`` functions work on a snapshot of the ``pyuppsala.Document``
+taken at call time, and the signing variants write the result back into the
+live document afterwards:
+
+- :func:`verify_document` and :func:`verify_all_document` verify the
+  snapshot. Changes another thread makes to the document while the call runs
+  are not seen and do not affect the verdict.
+- :func:`sign_document` and :func:`sign_enveloped_document` serialize
+  pybergshamra's own operations on the same document object: a concurrent
+  call on that document waits, with the GIL released, until the first call
+  has updated it, so each later signature covers the earlier ones.
+- pybergshamra cannot see mutations made through pyuppsala itself. A document
+  shared between threads must not be modified through its ``Document`` or
+  element proxies while a ``*_document`` signing call on it is in progress;
+  an edit that lands between the snapshot and the update invalidates the
+  spliced signature, and on the whole-document replacement path it is lost.
+  Synchronize such edits with the signing call in the application.
+
 Algorithm constants
 -------------------
 
@@ -314,6 +345,29 @@ Algorithm constants
 
       ML-DSA-87 (FIPS 204)
 
+   The three constants above use the xmlsec identifiers
+   (``http://www.aleksey.com/xmlsec/2025/12/xmldsig-more#ml-dsa-*``). The W3C
+   ``http://www.w3.org/2026/08/xmldsig-more#ml-dsa-*`` identifiers, as used by
+   SAML metadata feeds signed with the W3C namespace, name the same parameter
+   sets and are accepted everywhere a signature method is read: verification,
+   template signing, ``sign_enveloped`` (``signature_method=``), and PKCS#11
+   signers and verifiers. A template keeps the identifier it declares.
+
+   .. attribute:: ML_DSA_44_W3C
+      :type: str
+
+      ML-DSA-44 (FIPS 204), W3C identifier
+
+   .. attribute:: ML_DSA_65_W3C
+      :type: str
+
+      ML-DSA-65 (FIPS 204), W3C identifier
+
+   .. attribute:: ML_DSA_87_W3C
+      :type: str
+
+      ML-DSA-87 (FIPS 204), W3C identifier
+
    **SLH-DSA Post-Quantum**
 
    .. attribute:: SLH_DSA_SHA2_128F
@@ -345,6 +399,43 @@ Algorithm constants
       :type: str
 
       SLH-DSA-SHA2-256s (FIPS 205)
+
+   As for ML-DSA, the six constants above use the xmlsec identifiers
+   (``http://www.aleksey.com/xmlsec/2025/12/xmldsig-more#slh-dsa-sha2-*``).
+   The W3C ``http://www.w3.org/2026/08/xmldsig-more#slh-dsa-sha2-*``
+   identifiers name the same parameter sets and are accepted everywhere a
+   signature method is read (Bergshamra 0.10.1 or newer). The SHAKE parameter
+   sets defined under the W3C namespace are not implemented.
+
+   .. attribute:: SLH_DSA_SHA2_128F_W3C
+      :type: str
+
+      SLH-DSA-SHA2-128f (FIPS 205), W3C identifier
+
+   .. attribute:: SLH_DSA_SHA2_128S_W3C
+      :type: str
+
+      SLH-DSA-SHA2-128s (FIPS 205), W3C identifier
+
+   .. attribute:: SLH_DSA_SHA2_192F_W3C
+      :type: str
+
+      SLH-DSA-SHA2-192f (FIPS 205), W3C identifier
+
+   .. attribute:: SLH_DSA_SHA2_192S_W3C
+      :type: str
+
+      SLH-DSA-SHA2-192s (FIPS 205), W3C identifier
+
+   .. attribute:: SLH_DSA_SHA2_256F_W3C
+      :type: str
+
+      SLH-DSA-SHA2-256f (FIPS 205), W3C identifier
+
+   .. attribute:: SLH_DSA_SHA2_256S_W3C
+      :type: str
+
+      SLH-DSA-SHA2-256s (FIPS 205), W3C identifier
 
    **Block Cipher**
 
@@ -1330,12 +1421,16 @@ verify and sign
 .. function:: verify_document(ctx: DsigContext, document: pyuppsala.Document) -> VerifyResult
 
    Verify the first ``<Signature>`` from a ``pyuppsala.Document``. The document
-   is serialized to owned XML before entering the verifier; no Rust-owned DOM
-   pointer crosses the extension-module boundary.
+   is serialized once (as ``bytes`` through
+   ``Document.to_xml_bytes_with_options`` when pyuppsala provides it, otherwise
+   as ``str``) before entering the verifier; no Rust-owned DOM pointer crosses
+   the extension-module boundary. Requires pyuppsala 0.13.0 or newer
+   (``pip install pybergshamra[documents]``).
 
 .. function:: verify_all_document(ctx: DsigContext, document: pyuppsala.Document) -> list[VerifyResult]
 
-   Verify every ``<Signature>`` from a ``pyuppsala.Document`` through owned XML.
+   Verify every ``<Signature>`` from a ``pyuppsala.Document`` through one
+   serialization, as for :func:`verify_document`.
 
 .. function:: sign(ctx: DsigContext, template_xml: str) -> str
 
@@ -1356,8 +1451,8 @@ verify and sign
 .. function:: sign_document(ctx: DsigContext, document: pyuppsala.Document) -> None
 
    Fill an existing XML-DSig template in ``document``. The document is
-   serialized, signed, and safely replaced in place after success. It must
-   contain empty ``DigestValue`` and ``SignatureValue`` elements.
+   serialized, signed, and replaced in place only after signing succeeds. It
+   must contain empty ``DigestValue`` and ``SignatureValue`` elements.
 
 .. function:: sign_enveloped(ctx: DsigContext, xml: str, *, reference_id: str | None = None, signature_method: str | None = None, digest_method: str | None = None, c14n_method: str | None = None, cert_pem: str | None = None) -> str
 
@@ -1375,7 +1470,19 @@ verify and sign
 .. function:: sign_enveloped_document(ctx: DsigContext, document: pyuppsala.Document, *, reference_id: str | None = None, signature_method: str | None = None, digest_method: str | None = None, c14n_method: str | None = None, cert_pem: str | None = None) -> None
 
    Build and sign an enveloped ``<ds:Signature>`` in ``document``. The document
-   is serialized, signed, and safely replaced in place after success.
+   is serialized once for signing. With pyuppsala 0.13.0 or newer only the
+   computed ``<ds:Signature>`` element is spliced into the live document as the
+   first child of the document element, so the caller's tree, node references,
+   and parse state are otherwise untouched; on a 108 MB SAML aggregate this
+   removes one full re-serialization and re-parse per signature. With older
+   pyuppsala the whole document is replaced in place after success. Both
+   paths resolve their hook before signing, so an unsupported document type is
+   reported before any (possibly HSM-backed) signature is produced.
+
+   Concurrent calls on the same document are serialized, so signing a
+   document from several threads yields signatures that each cover the ones
+   spliced in before them; see *Threads and the GIL* for what the caller
+   must still synchronize.
 
 XML encryption
 --------------

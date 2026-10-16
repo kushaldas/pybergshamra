@@ -8,6 +8,7 @@ use pyo3::prelude::*;
 mod algorithms;
 mod c14n;
 mod crypto;
+mod doclock;
 mod dsig;
 mod enc;
 mod errors;
