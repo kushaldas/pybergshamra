@@ -1,81 +1,57 @@
 # Changelog
 
-## Unreleased
-
-### Added
-
-- Bergshamra 0.10.1 accepts the W3C
-  `http://www.w3.org/2026/08/xmldsig-more#slh-dsa-sha2-128s/128f/192s/192f/256s/256f`
-  signature identifiers alongside the xmlsec ones, so metadata feeds signed
-  with the W3C SLH-DSA namespace, such as the eduID Luxembourg
-  SLH-DSA-SHA2-256s upstream feed, verify through `verify`,
-  `verify_document`, and the pyFF loader. `Algorithm.SLH_DSA_SHA2_*_W3C`
-  expose the six identifiers next to the existing xmlsec constants. The
-  SHAKE parameter sets are not implemented.
-
-### Fixed
-
-- `sign_document` and `sign_enveloped_document` now hold the target
-  `pyuppsala.Document` for the whole snapshot, sign, and update sequence.
-  Two threads signing the same document could previously both capture the
-  unsigned XML while the GIL was released and both splice their signature
-  in; each enveloped signature excluded only itself, so nothing verified,
-  and on the whole-document replacement path the second signer dropped the
-  first signature. A concurrent call on the same document now waits (with
-  the GIL released) until the first has updated it, so every later
-  signature covers the earlier ones. Mutating a document through pyuppsala
-  while a signing call on it is in progress remains the caller's
-  responsibility, and the API reference now says so instead of promising
-  that caller objects are never touched concurrently.
-- `benchmarks/pybench.py --json` writes its timing rows to stderr so stdout
-  carries exactly one JSON document.
+## 0.10.0 [2026-10-16]
 
 ### Changed
 
-- Require the Bergshamra 0.10.1 crates and pyuppsala 0.13.0 or newer for
-  the `*_document` APIs, so the fragment-splice path of
-  `sign_enveloped_document` is always available.
-- The development lockfile pins pyuppsala 0.13.0 so the test suite exercises
-  the fragment-splice path of `sign_enveloped_document`; the proxy-identity
-  assertion in that test is now conditional on the pyuppsala fragment hook,
-  so the suite also passes where the whole document is replaced instead.
-
-## 0.10.0 [2026-10-15]
-
-### Changed
-
-- Update all Bergshamra crates to 0.10.0 from crates.io, removing the local
+- Update all Bergshamra crates to 0.10.1 from crates.io, removing the local
   path overrides used while the performance work was in progress. Bergshamra
-  0.10.0 brings the incremental inclusive C14N serializer, arena-borrowed
+  0.10.x brings the incremental inclusive C14N serializer, arena-borrowed
   attribute rendering, pre-sized output buffers, and Uppsala 0.12.0.
 - All hot entry points (`verify`, `verify_all`, `sign`, `sign_enveloped`,
   `canonicalize`, `canonicalize_subtree`, `encrypt`, `decrypt`,
   `decrypt_to_bytes`) now release the GIL for their CPU-bound Rust work, so
   multi-threaded Python callers scale across cores (4-thread verify wall time
-  dropped ~57%).
+  dropped ~57%). Arguments passed as `str` or `bytes` are copied before the
+  GIL is released.
 - The extension is built with fat LTO, a single codegen unit, and stripped
   symbols.
 - Added `benchmarks/pybench.py` for reproducible Python-layer A/B measurement
   (`docs/performance/20261007-optimized-crates-gil-release.md` has results and
-  methodology).
-- Bergshamra 0.10.0 accepts the W3C
-  `http://www.w3.org/2026/08/xmldsig-more#ml-dsa-44/65/87` signature
-  identifiers alongside the xmlsec ones, so metadata feeds signed with the
-  W3C ML-DSA namespace verify through `verify`, `verify_document`, and the
-  pyFF loader. Injected PKCS#11 signers and verifiers match either
-  spelling of the same parameter set. `Algorithm.ML_DSA_44_W3C`,
-  `Algorithm.ML_DSA_65_W3C`, and `Algorithm.ML_DSA_87_W3C` expose the W3C
-  identifiers next to the existing xmlsec ones.
-- Require `uppsala` 0.12.0 on the Rust side and `pyuppsala` 0.12.0 or newer
+  methodology). With `--json` the timing rows go to stderr so stdout carries
+  exactly one JSON document.
+- Bergshamra 0.10.x accepts the W3C `http://www.w3.org/2026/08/xmldsig-more`
+  identifiers for ML-DSA-44/65/87 and for SLH-DSA SHA2-128s/128f/192s/192f/
+  256s/256f alongside the xmlsec ones, so metadata feeds signed with the W3C
+  post-quantum namespace, such as the eduID Luxembourg ML-DSA-87 and
+  SLH-DSA-SHA2-256s upstream feeds, verify through `verify`,
+  `verify_document`, and the pyFF loader. Injected PKCS#11 signers and
+  verifiers match either spelling of the same parameter set.
+  `Algorithm.ML_DSA_*_W3C` and `Algorithm.SLH_DSA_SHA2_*_W3C` expose the W3C
+  identifiers next to the existing xmlsec constants. The SLH-DSA SHAKE
+  parameter sets are not implemented.
+- Require `uppsala` 0.12.0 on the Rust side and `pyuppsala` 0.13.0 or newer
   for the `*_document` APIs and the test suite; pyuppsala is now a hard test
-  dependency, so the document tests no longer skip when it is absent.
+  dependency pinned to 0.13.0 in the development lockfile, so the document
+  tests no longer skip when it is absent and always exercise the
+  fragment-splice path below.
 - `sign_enveloped_document` now hands pyuppsala only the computed
-  `<ds:Signature>` fragment (through `Document._prepend_fragment_xml`,
-  pyuppsala 0.13+) instead of replacing the whole document with re-parsed
-  owned XML, and all `*_document` APIs read the document as `bytes` when
-  `Document.to_xml_bytes_with_options` exists. On a 108 MB eduGAIN aggregate
-  this removes one full serialization and one full reparse per signature.
-  Older pyuppsala documents keep the owned-XML replacement path.
+  `<ds:Signature>` fragment (through a callable
+  `Document._prepend_fragment_xml`, pyuppsala 0.13+) instead of replacing the
+  whole document with re-parsed owned XML, and all `*_document` APIs read the
+  document as `bytes` when `Document.to_xml_bytes_with_options` exists. On a
+  108 MB eduGAIN aggregate this removes one full serialization and one full
+  reparse per signature. Documents without a callable fragment hook keep the
+  owned-XML replacement path; both hooks are resolved before any (possibly
+  HSM-backed) signature is produced.
+- `sign_document` and `sign_enveloped_document` hold the target
+  `pyuppsala.Document` for the whole snapshot, sign, and update sequence, so
+  concurrent pybergshamra calls on the same document are serialized (waiting
+  with the GIL released) and every later signature covers the earlier ones.
+  Verification of a document covers the snapshot taken at call time.
+  Mutating a document through pyuppsala, including element proxies, while a
+  signing call on it is in progress is the caller's responsibility; the API
+  reference documents these rules.
 
 ## 0.9.2 [2026-09-28]
 

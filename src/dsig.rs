@@ -863,7 +863,13 @@ pub fn sign_enveloped_document(
     // live document (pyuppsala >= 0.13). Fallback: replace the whole document
     // through owned XML. Both are resolved before signing so a missing hook
     // is reported before any (possibly HSM-backed) signature is produced.
-    let prepend_fragment = document.getattr("_prepend_fragment_xml").ok();
+    // The fragment hook is optional, so only a callable attribute selects it;
+    // an adapter that sets it to None (or any non-callable) takes the
+    // replacement path instead of failing after the signature is computed.
+    let prepend_fragment = document
+        .getattr("_prepend_fragment_xml")
+        .ok()
+        .filter(|hook| hook.is_callable());
     let replace_xml = match &prepend_fragment {
         Some(_) => None,
         None => Some(document_replace_hook(document)?),

@@ -1655,6 +1655,31 @@ class TestSignEnveloped:
         assert len(results) == workers
         assert results[0].is_valid, results[0].reason
 
+    def test_sign_enveloped_document_ignores_non_callable_fragment_hook(self):
+        # Regression: an adapter exposing `_prepend_fragment_xml = None` next to
+        # a working `_replace_xml` selected the fragment path, computed the
+        # signature, and then raised TypeError calling None, wasting a possibly
+        # HSM-backed signing operation. Only a callable hook selects the
+        # fragment path; anything else uses whole-document replacement.
+        inner = pyuppsala.Document(self.DOC)
+        replace_calls = []
+
+        class NoneFragmentHook:
+            _prepend_fragment_xml = None
+
+            def __getattr__(self, name):
+                return getattr(inner, name)
+
+            def _replace_xml(self, xml):
+                replace_calls.append(xml)
+                return inner._replace_xml(xml)
+
+        pybergshamra.sign_enveloped_document(
+            self._ctx(), NoneFragmentHook(), reference_id="ABC123"
+        )
+        assert len(replace_calls) == 1
+        assert pybergshamra.verify_document(self._verify_ctx(), inner).is_valid
+
     def test_sign_enveloped_document_splices_fragment_and_keeps_proxies(self):
         # With pyuppsala >= 0.13 only the <ds:Signature> fragment is spliced in;
         # existing element proxies stay valid and the result verifies both as a
