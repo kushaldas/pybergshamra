@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.11.0 [2026-10-16]
+
+### Changed
+
+- Update all Bergshamra crates to 0.11.0 and Kryptering to 0.7.0 (tsp-ltv
+  0.6.0 follows through Bergshamra). Kryptering 0.7.0 keeps one initialized
+  PKCS#11 module context per library path for the life of the process and
+  never unloads the vendor module, not even when `C_Initialize` fails. This
+  removes the segmentation fault seen with the Thales Luna client when a
+  Python process dropped its last `Pkcs11Provider` and created another one
+  (or exited with one still alive). Validated against a Luna network HSM:
+  the drop-and-recreate loop, the drop-session-then-provider sequence, ten
+  threads constructing providers at once, repeated one-shot runs, and
+  pyFF batch and `pyffd` signing all pass; pybergshamra 0.10.0 crashed on
+  the first two. Applications no longer need their own provider cache to
+  stay safe, although keeping one still avoids repeated token lookups.
+- Kryptering 0.7.0 also rejects use of an inherited PKCS#11 module context
+  after `fork` (initialize after starting workers, or exec in the child),
+  requires PKCS#11 module paths to resolve to existing files, checks a
+  PKCS#11 key's curve against the algorithm it is used with, and runs
+  RustCrypto RSA private operations with blinding.
+- Cargo now uses the MSRV-aware resolver (`resolver = "3"`), matching the
+  Bergshamra, Kryptering and tsp-ltv crates, so `cargo update` keeps the
+  lockfile within `rust-version = 1.88` (without it the refresh selected
+  `aes` 0.9.3, which requires Rust 1.89).
+
 ## 0.10.0 [2026-10-16]
 
 ### Changed
