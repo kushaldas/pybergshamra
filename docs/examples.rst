@@ -35,6 +35,36 @@ Load an IdP certificate and verify. The common ID attribute names ``Id``,
    :func:`~pybergshamra.verify_all` and check each returned result for the
    signature your application requires.
 
+Verify metadata during a certificate rollover
+---------------------------------------------
+
+Publishers such as eIDAS countries roll the certificate that signs their
+metadata. Load the current and the next certificate into one manager: with
+the default ``trusted_keys_only`` policy, a signature made with either of them
+verifies. Each certificate still passes its own chain and expiry checks when
+trust anchors are configured, so an expired old certificate is simply skipped.
+
+.. code-block:: python
+
+    import pybergshamra
+
+    manager = pybergshamra.KeysManager()
+    manager.add_keys(
+        pybergshamra.load_x509_cert_pem(open(path, "rb").read())
+        for path in ("country-current.pem", "country-next.pem")
+    )
+    ctx = pybergshamra.DsigContext(manager)
+
+    result = pybergshamra.verify(ctx, metadata_xml)
+    if result:
+        print("signed by", result.key_info.x509_chain[0].hex()[:16], "...")
+    else:
+        print(f"metadata signature invalid: {result.reason}")
+
+Certificates embedded in the metadata's ``<KeyInfo>`` are never trusted on
+their own; they only decide which loaded certificate is tried first. Keep
+signers that must not vouch for each other in separate managers and contexts.
+
 Sign an XML document (enveloped)
 --------------------------------
 

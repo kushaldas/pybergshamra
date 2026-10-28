@@ -804,6 +804,33 @@ KeysManager
 
       Add a key to the manager.
 
+   .. method:: add_keys(keys: Iterable[Key]) -> None
+
+      Add several keys to the manager, keeping their order. Accepts any
+      iterable (list, tuple, generator). Every item is checked before the
+      manager changes: a non-``Key`` item raises :exc:`TypeError` and nothing
+      is added.
+
+      With ``trusted_keys_only`` (the :class:`DsigContext` default), every
+      key in the manager whose type fits the ``SignatureMethod`` is tried, and
+      the signature is valid when any of them verifies it. This is how to
+      handle certificate rollover: load the signer's current and next
+      certificate together. ``<KeyInfo>`` in the document only decides which
+      trusted key is tried first; certificates embedded in the document are
+      never used. :attr:`VerifyResult.key_info` tells which key verified.
+
+      .. code-block:: python
+
+         manager = pybergshamra.KeysManager()
+         manager.add_keys(pybergshamra.load_x509_cert_pem(pem) for pem in certs)
+         ctx = pybergshamra.DsigContext(manager)
+         result = pybergshamra.verify(ctx, signed_metadata)
+         if result:
+             signer_der = result.key_info.x509_chain[0]
+
+      A manager is one trust set: keys for signers that must not vouch for
+      each other (two IdPs, two countries) belong in separate managers.
+
    .. method:: insert_key_first(key: Key) -> None
 
       Insert a key at the front (becomes the first key).
@@ -1227,7 +1254,10 @@ DsigContext
       :type: bool
 
       Only use pre-configured keys, skip inline KeyInfo extraction.
-      Default: ``True`` when ``secure_defaults=True``.
+      Every key in the manager that fits the ``SignatureMethod`` is tried,
+      and the signature is valid when any of them verifies it (see
+      :meth:`KeysManager.add_keys`). ``<KeyInfo>`` only orders the
+      candidates. Default: ``True`` when ``secure_defaults=True``.
 
    .. attribute:: strict_verification
       :type: bool

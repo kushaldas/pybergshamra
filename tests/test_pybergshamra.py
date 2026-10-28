@@ -584,6 +584,33 @@ class TestKeysManager:
 # ===========================================================================
 
 
+    def test_add_keys_appends_in_order(self, rsa_private_key, hmac_key):
+        hmac_key.name = "hmac"
+        mgr = KeysManager()
+        mgr.add_key(rsa_private_key)
+        mgr.add_keys([hmac_key, rsa_private_key])
+        assert len(mgr) == 3
+        assert [k.algorithm_name for k in mgr.keys()] == ["RSA", "HMAC", "RSA"]
+
+    def test_add_keys_accepts_any_iterable(self, hmac_key):
+        mgr = KeysManager()
+        mgr.add_keys(())
+        assert len(mgr) == 0
+        mgr.add_keys(k for k in [hmac_key, hmac_key])
+        assert len(mgr) == 2
+
+    def test_add_keys_rejects_non_key_without_partial_insert(self, hmac_key):
+        mgr = KeysManager()
+        with pytest.raises(TypeError, match="expects Key objects"):
+            mgr.add_keys([hmac_key, "not a key"])
+        assert len(mgr) == 0
+
+    def test_add_keys_rejects_non_iterable(self, hmac_key):
+        mgr = KeysManager()
+        with pytest.raises(TypeError):
+            mgr.add_keys(hmac_key)
+        assert len(mgr) == 0
+
 class TestXmlKeysLoading:
     """Test loading keys from xmlsec keys.xml format."""
 
@@ -1825,3 +1852,81 @@ class TestSignEnveloped:
         )
         with pytest.raises(ValueError):
             pybergshamra.sign_enveloped(self._ctx(), self.DOC, cert_pem=bad_cert)
+
+
+
+class TestTrustedKeySet:
+    """Verification against several trusted certificates (certificate rollover).
+
+    With ``trusted_keys_only`` (the ``DsigContext`` default) any trusted key in
+    the manager that fits the SignatureMethod may verify the signature. Keys
+    embedded in the document are never used. See bergshamra ADR-0013.
+    """
+
+    DOC = (
+        '<md:EntityDescriptor xmlns:md="urn:oasis:names:tc:SAML:2.0:metadata" '
+        'entityID="https://eidas.example.eu/metadata">'
+        "<md:Extensions>country metadata</md:Extensions>"
+        "</md:EntityDescriptor>"
+    )
+
+    @staticmethod
+    def _cert_pem(n):
+        return (KEYS_DIR / f"same-subj-cert{n}.pem").read_bytes()
+
+    @classmethod
+    def _cert(cls, n):
+        return pybergshamra.load_x509_cert_pem(cls._cert_pem(n))
+
+    @classmethod
+    def _sign(cls, key_path, cert_pem):
+        mgr = KeysManager()
+        mgr.add_key(pybergshamra.load_key_file(str(key_path)))
+        return pybergshamra.sign_enveloped(
+            DsigContext(mgr), cls.DOC, cert_pem=cert_pem.decode()
+        )
+
+    @classmethod
+    def _sign_with(cls, n):
+        return cls._sign(KEYS_DIR / f"same-subj-key{n}.pem", cls._cert_pem(n))
+
+    @staticmethod
+    def _verify(keys, signed):
+        mgr = KeysManager()
+        mgr.add_keys(keys)
+        return pybergshamra.verify(DsigContext(mgr), signed)
+
+    @pytest.mark.parametrize("signer", [1, 2])
+    @pytest.mark.parametrize("order", [(1, 2), (2, 1)])
+    def test_either_certificate_verifies(self, signer, order):
+        signed = self._sign_with(signer)
+        result = self._verify([self._cert(n) for n in order], signed)
+        assert result.is_valid, result.reason
+        assert result.key_info.x509_chain[0] == self._cert(signer).x509_chain[0]
+
+    def test_separate_add_key_calls_are_equivalent(self):
+        signed = self._sign_with(2)
+        mgr = KeysManager()
+        for n in (1, 2):
+            mgr.add_key(self._cert(n))
+        assert pybergshamra.verify(DsigContext(mgr), signed).is_valid
+
+    def test_signer_not_in_manager_is_rejected(self):
+        # Signed with rsa-2048, which embeds its own certificate; neither
+        # trusted certificate matches and the inline one must not be used.
+        signed = self._sign(
+            RSA_DIR / "rsa-2048-key.pem", (RSA_DIR / "rsa-2048-cert.pem").read_bytes()
+        )
+        assert "X509Certificate" in signed
+        result = self._verify([self._cert(1), self._cert(2)], signed)
+        assert not result.is_valid
+        assert result.reason == (
+            "signature value verification failed with each of the 2 trusted keys"
+        )
+
+    def test_key_name_reports_the_verifying_certificate(self):
+        old, new = self._cert(1), self._cert(2)
+        old.name, new.name = "old", "new"
+        result = self._verify([old, new], self._sign_with(2))
+        assert result.is_valid
+        assert result.key_info.key_name == "new"

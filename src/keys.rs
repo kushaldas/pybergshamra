@@ -282,6 +282,38 @@ impl KeysManager {
         Ok(())
     }
 
+    /// Add several keys to the manager, keeping their order.
+    ///
+    /// Accepts any iterable of ``Key``. Every item is checked before the
+    /// manager changes, so a non-``Key`` item leaves it untouched.
+    fn add_keys(&self, keys: &Bound<'_, PyAny>) -> PyResult<()> {
+        let mut collected = Vec::new();
+        for item in keys.try_iter()? {
+            let item = item?;
+            let key = item.cast::<Key>().map_err(|_| {
+                pyo3::exceptions::PyTypeError::new_err(format!(
+                    "add_keys() expects Key objects, got {}",
+                    item.get_type()
+                        .name()
+                        .map_or_else(|_| "?".into(), |n| n.to_string())
+                ))
+            })?;
+            let k = key
+                .borrow()
+                .inner
+                .lock()
+                .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?
+                .clone();
+            collected.push(k);
+        }
+        let mut mgr = self
+            .inner
+            .lock()
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+        mgr.add_keys(collected);
+        Ok(())
+    }
+
     /// Insert a key at the front (becomes the first key).
     fn insert_key_first(&self, key: &Key) -> PyResult<()> {
         let k = key
