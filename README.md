@@ -7,7 +7,7 @@ Python bindings for the Bergshamra XML Security library
 pybergshamra gives you a fast, correct, and memory-safe XML security toolkit from
 Python with no C dependencies to compile and no transitive native libraries to audit.
 
-Version 0.11.0 (2026-10-16) uses Bergshamra 0.11.0 and Kryptering 0.7.0
+Version 0.11.1 (2026-10-28) uses Bergshamra 0.11.1 and Kryptering 0.7.0
 from crates.io, with tsp-ltv 0.6.0 for certificate validation.
 
 ## Features
@@ -191,6 +191,7 @@ each taking an allow-list of permitted algorithm URIs. The HSM operation classes
 | `Key` | A cryptographic key (RSA, EC, HMAC, AES, Ed25519, etc.) |
 | `KeyUsage` | Key usage mode (Sign, Verify, Encrypt, Decrypt, Any) |
 | `KeysManager()` | Key store for managing keys and certificates |
+| `KeysManager.add_keys(keys)` | Add several keys at once; with `trusted_keys_only` any of them may verify (certificate rollover) |
 | `DsigContext(manager)` | Configuration for XML-DSig sign/verify |
 | `EncContext(manager)` | Configuration for XML-Enc encrypt/decrypt |
 | `C14nMode` | Canonicalization mode (Inclusive, Exclusive, etc.) |

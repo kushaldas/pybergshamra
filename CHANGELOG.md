@@ -1,5 +1,45 @@
 # Changelog
 
+## 0.11.1 [2026-10-28]
+
+### Added
+
+- `KeysManager.add_keys(keys)` adds every `Key` from an iterable, in order.
+  Items are type-checked first, so a non-`Key` raises `TypeError` and leaves
+  the manager unchanged.
+
+### Changed
+
+- Update all Bergshamra crates to 0.11.1. `trusted_keys_only` verification
+  (the `DsigContext` default) now tries every trusted key that fits the
+  `SignatureMethod` and succeeds when any of them verifies, instead of using
+  only a `<KeyName>` / `<X509IssuerSerial>` match or the first key. Loading a
+  signer's old and new certificates together therefore handles certificate
+  rollover, as needed for eIDAS metadata aggregation in pyFF;
+  `VerifyResult.key_info` reports which key verified. Inline `<KeyInfo>`
+  certificates are still never used; they only decide the order. See
+  Bergshamra ADR-0013 and `docs/adr/0002-keysmanager-add-keys.md`.
+
+  **Upgrade note:** every key in a `KeysManager` used with
+  `trusted_keys_only` is now an accepted signer. Named and certificate-backed
+  keys could already be selected through `<KeyName>` / `<X509IssuerSerial>`,
+  but unnamed keys without a certificate (for example from `load_hmac_key`
+  or raw public keys) used to verify only when they were the first entry.
+  Audit each manager and keep signers that must not vouch for each other in
+  separate managers.
+- When several trusted keys are tried and none verifies, `VerifyResult.reason`
+  reads `signature value verification failed with each of the N trusted
+  keys`; with a single key it is unchanged.
+
+### Security
+
+- Bergshamra 0.11.1 moves its EC key handling to the RustCrypto 0.14
+  elliptic-curve line already used by Kryptering, which removes
+  `crypto-bigint` 0.5.5 (RUSTSEC-2026-0387, no fixed 0.5 release) from the
+  lockfile. Also updated `crypto-bigint` 0.7.5 -> 0.7.10 (RUSTSEC-2026-0387,
+  yanked), `ctutils` 0.4.3 -> 0.4.6 (RUSTSEC-2026-0385) and the yanked
+  `inout` 0.2.3 -> 0.2.5.
+
 ## 0.11.0 [2026-10-16]
 
 ### Changed

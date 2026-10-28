@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Optional, TypeAlias
+from typing import Any, Iterable, Optional, TypeAlias
 
 # The document-native APIs (``verify_document``, ``sign_document``, ...) accept
 # a ``pyuppsala.Document`` (pyuppsala >= 0.13.0). pyuppsala is an optional
@@ -279,6 +279,19 @@ class KeysManager:
     def add_key(self, key: Key) -> None:
         """Add a key to the manager."""
         ...
+    def add_keys(self, keys: Iterable[Key]) -> None:
+        """Add several keys to the manager, keeping their order.
+
+        Every item is checked before the manager changes: a non-``Key`` item
+        raises ``TypeError`` and leaves the manager untouched.
+
+        With ``trusted_keys_only`` (the ``DsigContext`` default) every trusted
+        key that fits the ``SignatureMethod`` is tried and the signature is
+        valid when any of them verifies it, so a signer's old and new
+        certificates can be loaded together during rollover. Treat one manager
+        as one trust set.
+        """
+        ...
     def insert_key_first(self, key: Key) -> None:
         """Insert a key at the front (becomes the first key)."""
         ...
@@ -528,7 +541,10 @@ class DsigContext:
     def enabled_key_data_x509(self, value: bool) -> None: ...
     @property
     def trusted_keys_only(self) -> bool:
-        """Only use pre-configured keys, skip inline KeyInfo extraction."""
+        """Only use pre-configured keys, skip inline KeyInfo extraction.
+
+        Every manager key that fits the ``SignatureMethod`` is tried; the
+        signature is valid when any of them verifies it."""
         ...
     @trusted_keys_only.setter
     def trusted_keys_only(self, value: bool) -> None: ...
