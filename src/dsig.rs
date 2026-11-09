@@ -17,7 +17,7 @@ use bergshamra_dsig::{
 // ---------------------------------------------------------------------------
 
 /// Metadata about a single verified `<Reference>`.
-#[pyclass(name = "VerifiedReference", skip_from_py_object)]
+#[pyclass(name = "VerifiedReference")]
 #[derive(Clone)]
 pub struct VerifiedReference {
     uri: String,
@@ -78,7 +78,7 @@ impl From<&RustVerifiedReference> for VerifiedReference {
 // ---------------------------------------------------------------------------
 
 /// Information about the key used for verification.
-#[pyclass(name = "VerifiedKeyInfo", skip_from_py_object)]
+#[pyclass(name = "VerifiedKeyInfo")]
 #[derive(Clone)]
 pub struct VerifiedKeyInfo {
     algorithm: String,
@@ -136,7 +136,7 @@ impl From<&RustVerifiedKeyInfo> for VerifiedKeyInfo {
 /// Use ``bool(result)`` to check signature validity. If your application needs
 /// every reference digest computed locally, also require
 /// ``all_reference_digests_verified``.
-#[pyclass(name = "VerifyResult", skip_from_py_object)]
+#[pyclass(name = "VerifyResult")]
 #[derive(Clone)]
 pub struct VerifyResult {
     valid: bool,

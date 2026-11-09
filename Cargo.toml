@@ -1,6 +1,6 @@
 [package]
 name = "pybergshamra"
-version = "0.11.1"
+version = "0.12.0"
 edition = "2021"
 description = "Python bindings for the Bergshamra XML Security library"
 license = "BSD-2-Clause"
@@ -16,18 +16,18 @@ name = "pybergshamra"
 crate-type = ["cdylib"]
 
 [dependencies]
-pyo3 = { version = "0.29.0", features = ["extension-module", "abi3-py310"] }
-bergshamra-core = "0.11.1"
-bergshamra-c14n = "0.11.1"
-bergshamra-keys = "0.11.1"
-bergshamra-dsig = "0.11.1"
-bergshamra-enc = "0.11.1"
-bergshamra-xml = "0.11.1"
-bergshamra-crypto = "0.11.1"
-bergshamra-pkcs12 = "0.11.1"
-kryptering = { version = "0.7.0", default-features = false, features = ["rustcrypto", "legacy", "post-quantum", "pkcs11"] }
-base64 = "0.22"
-uppsala = "0.12.0"
+pyo3 = { version = "0.30.1", features = ["extension-module", "abi3-py310"] }
+bergshamra-core = "0.12.0"
+bergshamra-c14n = "0.12.0"
+bergshamra-keys = "0.12.0"
+bergshamra-dsig = "0.12.0"
+bergshamra-enc = "0.12.0"
+bergshamra-xml = "0.12.0"
+bergshamra-crypto = "0.12.0"
+bergshamra-pkcs12 = "0.12.0"
+kryptering = { version = "0.7.1", default-features = false, features = ["rustcrypto", "legacy", "post-quantum", "pkcs11"] }
+base64 = "0.23.1"
+uppsala = "0.12.1"
 
 # The extension is a shipped artifact: fat LTO + one codegen unit + stripped
 # symbols, mirroring the bergshamra workspace release profile. panic="abort"
