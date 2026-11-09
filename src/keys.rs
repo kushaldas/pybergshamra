@@ -49,7 +49,7 @@ impl From<KeyUsage> for RustKeyUsage {
 // ---------------------------------------------------------------------------
 
 /// A cryptographic key (RSA, EC, HMAC, AES, Ed25519, X25519, PQ, etc.).
-#[pyclass(name = "Key", skip_from_py_object)]
+#[pyclass(name = "Key")]
 #[derive(Clone)]
 pub struct Key {
     pub(crate) inner: Arc<Mutex<RustKey>>,
@@ -253,7 +253,7 @@ impl Key {
 // ---------------------------------------------------------------------------
 
 /// Key store for managing cryptographic keys and certificates.
-#[pyclass(name = "KeysManager", skip_from_py_object)]
+#[pyclass(name = "KeysManager")]
 #[derive(Clone)]
 pub struct KeysManager {
     pub(crate) inner: Arc<Mutex<RustKeysManager>>,

@@ -11,7 +11,7 @@ use pyo3::types::PyBytes;
 use crate::errors::to_pyerr;
 
 /// The decoded contents of a PKCS#12 container.
-#[pyclass(name = "Pkcs12Contents", skip_from_py_object)]
+#[pyclass(name = "Pkcs12Contents")]
 pub struct Pkcs12Contents {
     private_keys: Vec<Vec<u8>>,
     certificates: Vec<Vec<u8>>,

@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.12.0 [2026-11-09]
+
+### Changed
+
+- Update all Bergshamra crates to 0.12.0 and Kryptering to 0.7.1.
+- Update PyO3 to 0.30.1 and remove the now-default, deprecated
+  `skip_from_py_object` class attributes.
+- Update base64 to 0.23.1, Uppsala to 0.12.1, and refresh the Rust and Python
+  dependency lockfiles.
+
+### Security
+
+- Remove RSA 0.9.10 and the RSA 0.10 release candidate from the dependency
+  graph in favor of RSA 0.10.0, resolving RUSTSEC-2023-0071.
+
 ## 0.11.1 [2026-10-28]
 
 ### Added

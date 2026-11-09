@@ -7,8 +7,9 @@ Python bindings for the Bergshamra XML Security library
 pybergshamra gives you a fast, correct, and memory-safe XML security toolkit from
 Python with no C dependencies to compile and no transitive native libraries to audit.
 
-Version 0.11.1 (2026-10-28) uses Bergshamra 0.11.1 and Kryptering 0.7.0
-from crates.io, with tsp-ltv 0.6.0 for certificate validation.
+Version 0.12.0 (2026-11-09) uses Bergshamra 0.12.0 and Kryptering 0.7.1
+from crates.io, with tsp-ltv 0.6.1 for certificate validation and PyO3 0.30.1
+for the Python bindings.
 
 ## Features
 
